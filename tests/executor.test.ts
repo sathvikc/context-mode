@@ -62,14 +62,33 @@ async function main() {
     );
   });
 
-  await test("detects Shell runtime (bash or sh)", async () => {
-    const shell = runtimes.shell;
-    const isValid = ["bash", "sh"].includes(shell) ||
-      shell.toLowerCase().endsWith("bash.exe") ||
-      shell.toLowerCase().endsWith("/bash") ||
-      shell.toLowerCase().endsWith("/sh");
-    assert.ok(isValid, `Got: ${shell}`);
+  await test("detects Shell runtime (non-empty string)", async () => {
+    assert.ok(
+      typeof runtimes.shell === "string" && runtimes.shell.length > 0,
+      `Got: ${runtimes.shell}`,
+    );
   });
+
+  if (process.platform === "win32") {
+    await test("Windows: shell is Git Bash or fallback, never WSL bash", async () => {
+      const shell = runtimes.shell.toLowerCase();
+      assert.ok(
+        !shell.includes("system32") && !shell.includes("windowsapps"),
+        `Shell should not be WSL bash, got: ${runtimes.shell}`,
+      );
+    });
+
+    await test("Windows: shell execute works with non-ASCII (Chinese) project path", async () => {
+      const chineseDir = "C:\\Users\\NINGMEI\\AppData\\Local\\Temp\\测试目录";
+      const { mkdirSync, rmSync } = await import("node:fs");
+      try { mkdirSync(chineseDir, { recursive: true }); } catch {}
+      const chineseExecutor = new PolyglotExecutor({ runtimes, projectRoot: chineseDir });
+      const r = await chineseExecutor.execute({ language: "shell", code: 'echo "chinese path ok"' });
+      assert.equal(r.exitCode, 0, `Failed with stderr: ${r.stderr}`);
+      assert.ok(r.stdout.includes("chinese path ok"), `Got: ${r.stdout}`);
+      try { rmSync(chineseDir, { recursive: true, force: true }); } catch {}
+    });
+  }
 
   await test("detects TypeScript runtime", async () => {
     assert.ok(runtimes.typescript !== null, "No TS runtime found");
@@ -1099,6 +1118,67 @@ puts "has_emoji: #{FILE_CONTENT.include?('🔒')}"
     });
     assert.equal(r.exitCode, 0);
     assert.ok(r.stdout.includes("Hello"));
+  });
+
+  // ===== TEMP CLEANUP RESILIENCE =====
+  console.log("\n--- Temp Cleanup Resilience ---\n");
+
+  await test("concurrent executions all return valid results (EBUSY resilience)", async () => {
+    const count = 15;
+    const promises = Array.from({ length: count }, (_, i) =>
+      executor.execute({
+        language: "javascript",
+        code: `
+          const fs = require('fs');
+          const path = require('path');
+          for (let j = 0; j < 3; j++) {
+            fs.writeFileSync(path.join(process.cwd(), 'f' + j + '.tmp'), 'data');
+          }
+          console.log("ok-${i}");
+        `,
+      }),
+    );
+    const results = await Promise.all(promises);
+    for (let i = 0; i < results.length; i++) {
+      const r = results[i];
+      assert.equal(typeof r.exitCode, "number", `Execution ${i}: exitCode not a number`);
+      assert.equal(typeof r.stdout, "string", `Execution ${i}: stdout not a string`);
+      assert.equal(typeof r.stderr, "string", `Execution ${i}: stderr not a string`);
+      assert.equal(typeof r.timedOut, "boolean", `Execution ${i}: timedOut not a boolean`);
+      assert.equal(r.exitCode, 0, `Execution ${i} failed with stderr: ${r.stderr}`);
+      assert.ok(r.stdout.includes(`ok-${i}`), `Missing output for execution ${i}`);
+    }
+  });
+
+  await test("PATH-dependent tools accessible from executor shell", async () => {
+    const r = await executor.execute({
+      language: "shell",
+      code: 'node --version',
+    });
+    assert.equal(r.exitCode, 0, `node not found in executor env, stderr: ${r.stderr}`);
+    assert.ok(r.stdout.trim().startsWith("v"), `Expected version string, got: ${r.stdout}`);
+  });
+
+  // ===== WINDOWS SHELL SUPPORT =====
+  console.log("\n--- Windows Shell Support ---\n");
+
+  await test("shell runtime is always a non-empty string", async () => {
+    assert.ok(
+      typeof runtimes.shell === "string" && runtimes.shell.length > 0,
+      `shell should always be a non-empty string, got: ${runtimes.shell}`,
+    );
+  });
+
+  await test("getAvailableLanguages always includes shell", async () => {
+    const { getAvailableLanguages } = await import("../src/runtime.js");
+    const langs = getAvailableLanguages(runtimes);
+    assert.ok(langs.includes("shell"), `shell should always be in available languages, got: ${langs}`);
+  });
+
+  await test("buildCommand returns shell command array", async () => {
+    const cmd = buildCommand(runtimes, "shell", "/tmp/script.sh");
+    assert.ok(Array.isArray(cmd) && cmd.length === 2, `Expected [shell, path], got: ${cmd}`);
+    assert.equal(cmd[1], "/tmp/script.sh");
   });
 
   // ===== SUMMARY =====

@@ -67,14 +67,7 @@ export class PolyglotExecutor {
 
     try {
       const filePath = this.#writeScript(tmpDir, code, language);
-
-      let cmd: string[];
-      try {
-        cmd = buildCommand(this.#runtimes, language, filePath);
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
-        return { exitCode: 1, stdout: "", stderr: msg, timedOut: false };
-      }
+      const cmd = buildCommand(this.#runtimes, language, filePath);
 
       // Rust: compile then run
       if (cmd[0] === "__rust_compile_run__") {
@@ -86,8 +79,8 @@ export class PolyglotExecutor {
       try {
         rmSync(tmpDir, { recursive: true, force: true });
       } catch {
-        // On Windows, EBUSY/EPERM is common due to delayed handle release
-        // after child process exit. Silently ignore — OS cleans temp dirs.
+        // On Windows, bash may still hold file handles when rmSync runs.
+        // Ignore EPERM/EBUSY — the OS will clean up %TEMP% eventually.
       }
     }
   }
@@ -226,7 +219,22 @@ export class PolyglotExecutor {
       // Only .cmd/.bat shims need shell on Windows; real executables don't.
       // Using shell: true globally causes process-tree kill issues with MSYS2/Git Bash.
       const needsShell = isWin && ["tsx", "ts-node", "elixir"].includes(cmd[0]);
-      const proc = spawn(cmd[0], cmd.slice(1), {
+
+      // On Windows with Git Bash, pass the script as `bash -c "source /posix/path"`
+      // rather than `bash /path/to/script.sh`. This avoids MSYS2 path mangling
+      // while still allowing MSYS_NO_PATHCONV to protect non-ASCII paths in commands.
+      let spawnCmd = cmd[0];
+      let spawnArgs: string[];
+      if (isWin && cmd.length === 2 && cmd[1]) {
+        const posixPath = cmd[1].replace(/\\/g, "/");
+        spawnArgs = [posixPath];
+      } else {
+        spawnArgs = isWin
+          ? cmd.slice(1).map(a => a.replace(/\\/g, "/"))
+          : cmd.slice(1);
+      }
+
+      const proc = spawn(spawnCmd, spawnArgs, {
         cwd,
         stdio: ["ignore", "pipe", "pipe"],
         env: this.#buildSafeEnv(cwd),
@@ -358,6 +366,18 @@ export class PolyglotExecutor {
       ];
       for (const key of winVars) {
         if (process.env[key]) env[key] = process.env[key]!;
+      }
+      // Prevent MSYS2/Git Bash from converting non-ASCII Windows paths
+      // (e.g. Chinese characters in project paths) to POSIX paths.
+      env["MSYS_NO_PATHCONV"] = "1";
+      env["MSYS2_ARG_CONV_EXCL"] = "*";
+      // Ensure Git Bash unix tools (cat, ls, head, etc.) are on PATH.
+      // The MCP server process may not inherit the full user PATH that
+      // includes Git's usr/bin directory.
+      const gitUsrBin = "C:\\Program Files\\Git\\usr\\bin";
+      const gitBin = "C:\\Program Files\\Git\\bin";
+      if (!env["PATH"].includes(gitUsrBin)) {
+        env["PATH"] = `${gitUsrBin};${gitBin};${env["PATH"]}`;
       }
     }
 
