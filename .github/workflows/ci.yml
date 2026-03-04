@@ -55,4 +55,4 @@ jobs:
         run: npm test
 
       - name: Doctor (verify server starts)
-        run: npx tsx packages/core/src/cli.ts doctor
+        run: npx tsx src/cli.ts doctor

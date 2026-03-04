@@ -3,8 +3,8 @@ import { writeFileSync, mkdirSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, test, afterAll } from "vitest";
-import { PolyglotExecutor } from "../packages/core/src/executor.js";
-import { detectRuntimes } from "../packages/core/src/runtime.js";
+import { PolyglotExecutor } from "../src/executor.js";
+import { detectRuntimes } from "../src/runtime.js";
 
 const runtimes = detectRuntimes();
 

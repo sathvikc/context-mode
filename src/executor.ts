@@ -8,9 +8,9 @@ import {
   type RuntimeMap,
   type Language,
 } from "./runtime.js";
-import { smartTruncate } from "@context-mode/shared/truncate";
-export type { ExecResult } from "@context-mode/shared/types";
-import type { ExecResult } from "@context-mode/shared/types";
+import { smartTruncate } from "./truncate.js";
+export type { ExecResult } from "./types.js";
+import type { ExecResult } from "./types.js";
 
 const isWin = process.platform === "win32";
 

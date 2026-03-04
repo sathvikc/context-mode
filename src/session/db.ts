@@ -6,9 +6,9 @@
  * the shared package.
  */
 
-import { SQLiteBase, defaultDBPath } from "@context-mode/shared/db-base";
-import type { PreparedStatement } from "@context-mode/shared/db-base";
-import type { SessionEvent } from "@context-mode/shared/types";
+import { SQLiteBase, defaultDBPath } from "../db-base.js";
+import type { PreparedStatement } from "../db-base.js";
+import type { SessionEvent } from "../types.js";
 import { createHash } from "node:crypto";
 
 // ─────────────────────────────────────────────────────────

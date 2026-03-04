@@ -11,7 +11,7 @@
 
 import { strict as assert } from "node:assert";
 import { describe, test } from "vitest";
-import { ContentStore } from "../packages/core/src/store.js";
+import { ContentStore } from "../src/store.js";
 
 // ─────────────────────────────────────────────────────────
 // Smart Truncation simulation (60% head + 40% tail)

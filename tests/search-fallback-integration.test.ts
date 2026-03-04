@@ -16,7 +16,7 @@ import { describe, test } from "vitest";
 import { strict as assert } from "node:assert";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ContentStore } from "../packages/core/src/store.js";
+import { ContentStore } from "../src/store.js";
 
 function createStore(): ContentStore {
   const path = join(

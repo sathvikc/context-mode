@@ -13,8 +13,8 @@
  * This provides honest, reproducible benchmarks for the open-source community.
  */
 
-import { PolyglotExecutor } from "../packages/core/src/executor.js";
-import { detectRuntimes, getRuntimeSummary } from "../packages/core/src/runtime.js";
+import { PolyglotExecutor } from "../src/executor.js";
+import { detectRuntimes, getRuntimeSummary } from "../src/runtime.js";
 import { readFileSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";

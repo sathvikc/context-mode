@@ -9,8 +9,8 @@
 
 import { describe, test } from "vitest";
 import { strict as assert } from "node:assert";
-import { extractSnippet, positionsFromHighlight } from "../packages/core/src/server.js";
-import { ContentStore } from "../packages/core/src/store.js";
+import { extractSnippet, positionsFromHighlight } from "../src/server.js";
+import { ContentStore } from "../src/store.js";
 
 const STX = "\x02";
 const ETX = "\x03";

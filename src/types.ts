@@ -3,7 +3,7 @@
  *
  * Contains interfaces that are genuinely shared between the core (ContentStore,
  * PolyglotExecutor) and the session domain (SessionDB, event extraction).
- * Import from "@context-mode/shared/types".
+ * Import from "./types.js".
  */
 
 // ─────────────────────────────────────────────────────────

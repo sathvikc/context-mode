@@ -15,7 +15,7 @@ import { spawnSync, execSync } from "node:child_process";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, test } from "vitest";
-import { ContentStore } from "../packages/core/src/store.js";
+import { ContentStore } from "../src/store.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const HOOK_PATH = join(__dirname, "..", "hooks", "pretooluse.mjs");

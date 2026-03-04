@@ -226,36 +226,6 @@ try {
       tableRows.push(`| Last request | 1 | "${promptPreview}" |`);
     }
 
-    if (tableRows.length > 0) {
-      block += `\n  <display_table>`;
-      block += `\n    MANDATORY OUTPUT — Display this table as your FIRST output:`;
-      block += `\n    ---`;
-      block += `\n    **context-mode** — session ${isCompact ? "restored" : "loaded"}`;
-      block += `\n    `;
-      block += `\n    | Preserved | Count | Details |`;
-      block += `\n    |-----------|------:|---------|`;
-      for (const row of tableRows) {
-        block += `\n    ${row}`;
-      }
-      if (isCompact) {
-        block += `\n    `;
-        block += `\n    *Context compacted — session knowledge restored.*`;
-      } else {
-        block += `\n    `;
-        block += `\n    *Previous session loaded via --continue.*`;
-      }
-      block += `\n    ---`;
-      block += `\n  </display_table>`;
-    }
-
-    // ── Last user prompt — always in context (critical for compact) ──
-    if (lastPrompt) {
-      block += `\n  <last_user_prompt>${lastPrompt}</last_user_prompt>`;
-      if (isCompact) {
-        block += `\n  <continue_from>Continue working on the request above. Do NOT ask the user to repeat themselves.</continue_from>`;
-      }
-    }
-
     // ── Mandatory search — LLM must restore working memory from FTS5 ──
     const queries = [];
     if (fileNames.size > 0) queries.push("active files tracked");
@@ -266,13 +236,41 @@ try {
     if (grouped.error?.length > 0) queries.push("errors encountered");
     if (!queries.length) queries.push("session resume overview");
 
-    block += `\n  <mandatory_actions>`;
-    block += `\n    BEFORE doing anything else:`;
-    block += `\n    1. Display the summary table to the user.`;
-    block += `\n    2. Restore working memory — search session events:`;
-    block += `\n       mcp__plugin_context-mode_context-mode__search(queries: ${JSON.stringify(queries)}, source: "session-events")`;
-    block += `\n    3. Then continue the user's last request.`;
-    block += `\n  </mandatory_actions>`;
+    // ── STEP 1: Search call — must fire BEFORE any text output ──
+    block += `\n  <required_tool_call priority="immediate">`;
+    block += `\n    You MUST call this tool FIRST, before generating ANY text output:`;
+    block += `\n    mcp__plugin_context-mode_context-mode__search(queries: ${JSON.stringify(queries)}, source: "session-events")`;
+    block += `\n    This is a blocking requirement. Do not skip this step.`;
+    block += `\n  </required_tool_call>`;
+
+    // ── STEP 2: Display table — must be FIRST text the user sees ──
+    if (tableRows.length > 0) {
+      block += `\n  <required_output priority="first_message">`;
+      block += `\n    After the search completes, your FIRST text output to the user MUST be exactly this table:`;
+      block += `\n    \`\`\``;
+      block += `\n    ---`;
+      block += `\n    **context-mode** — session ${isCompact ? "restored" : "loaded"}`;
+      block += `\n    `;
+      block += `\n    | Preserved | Count | Details |`;
+      block += `\n    |-----------|------:|---------|`;
+      for (const row of tableRows) {
+        block += `\n    ${row}`;
+      }
+      block += `\n    `;
+      block += `\n    *${isCompact ? "Context compacted — session knowledge restored." : "Previous session loaded via --continue."}*`;
+      block += `\n    ---`;
+      block += `\n    \`\`\``;
+      block += `\n    Do NOT skip this table. Do NOT paraphrase it. Copy it exactly as shown above.`;
+      block += `\n  </required_output>`;
+    }
+
+    // ── STEP 3: Last user prompt + continue ──
+    if (lastPrompt) {
+      block += `\n  <last_user_prompt>${lastPrompt}</last_user_prompt>`;
+      if (isCompact) {
+        block += `\n  <continue_from>After displaying the table, continue working on the request above. Do NOT ask the user to repeat themselves.</continue_from>`;
+      }
+    }
 
     block += `\n</session_knowledge>`;
     return block;

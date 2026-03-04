@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
 import { afterAll, describe, test } from "vitest";
-import { SessionDB } from "../../packages/session/src/db.js";
+import { SessionDB } from "../../src/session/db.js";
 
 const cleanups: Array<() => void> = [];
 

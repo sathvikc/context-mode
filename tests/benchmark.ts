@@ -1,10 +1,10 @@
-import { PolyglotExecutor } from "../packages/core/src/executor.js";
+import { PolyglotExecutor } from "../src/executor.js";
 import {
   detectRuntimes,
   getRuntimeSummary,
   hasBunRuntime,
   type Language,
-} from "../packages/core/src/runtime.js";
+} from "../src/runtime.js";
 
 const runtimes = detectRuntimes();
 const executor = new PolyglotExecutor({ runtimes });

@@ -8,7 +8,7 @@
 import { readFileSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { ContentStore } from "../packages/core/src/store.js";
+import { ContentStore } from "../src/store.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const fixtureDir = join(__dirname, "fixtures");

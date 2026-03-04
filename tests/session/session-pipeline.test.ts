@@ -3,9 +3,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { afterAll, describe, test } from "vitest";
-import { extractEvents, extractUserEvents } from "../../packages/session/src/extract.js";
-import { SessionDB } from "../../packages/session/src/db.js";
-import { buildResumeSnapshot } from "../../packages/session/src/snapshot.js";
+import { extractEvents, extractUserEvents } from "../../src/session/extract.js";
+import { SessionDB } from "../../src/session/db.js";
+import { buildResumeSnapshot } from "../../src/session/snapshot.js";
 
 const cleanups: Array<() => void> = [];
 

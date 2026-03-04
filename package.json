@@ -1,8 +1,5 @@
 {
   "name": "context-mode",
-  "workspaces": [
-    "packages/*"
-  ],
   "version": "0.9.23-dev",
   "type": "module",
   "description": "Claude Code MCP plugin that saves 98% of your context window. Sandboxed code execution, FTS5 knowledge base, and intent-driven search.",
@@ -31,10 +28,6 @@
   "files": [
     "build",
     "hooks",
-    "packages/shared/dist",
-    "packages/shared/package.json",
-    "packages/session/dist",
-    "packages/session/package.json",
     "server.bundle.mjs",
     "skills",
     ".claude-plugin",
@@ -44,13 +37,13 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "tsc -b",
-    "bundle": "esbuild packages/core/src/server.ts --bundle --platform=node --target=node18 --format=esm --outfile=server.bundle.mjs --external:better-sqlite3 --external:turndown --external:turndown-plugin-gfm --external:@mixmark-io/domino --minify",
-    "prepublishOnly": "npm run build && node scripts/fix-imports.mjs",
-    "dev": "npx tsx packages/core/src/server.ts",
-    "setup": "npx tsx packages/core/src/cli.ts setup",
-    "doctor": "npx tsx packages/core/src/cli.ts doctor",
-    "typecheck": "tsc -b --noEmit",
+    "build": "tsc",
+    "bundle": "esbuild src/server.ts --bundle --platform=node --target=node18 --format=esm --outfile=server.bundle.mjs --external:better-sqlite3 --external:turndown --external:turndown-plugin-gfm --external:@mixmark-io/domino --minify",
+    "prepublishOnly": "npm run build",
+    "dev": "npx tsx src/server.ts",
+    "setup": "npx tsx src/cli.ts setup",
+    "doctor": "npx tsx src/cli.ts doctor",
+    "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
     "benchmark": "npx tsx tests/benchmark.ts",

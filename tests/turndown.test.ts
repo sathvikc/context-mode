@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { describe, test } from "vitest";
-import { PolyglotExecutor } from "../packages/core/src/executor.js";
+import { PolyglotExecutor } from "../src/executor.js";
 import { createRequire } from "node:module";
 
 // Resolve turndown path the same way server.ts will

@@ -3,13 +3,13 @@ import { strict as assert } from "node:assert";
 import { writeFileSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { PolyglotExecutor } from "../packages/core/src/executor.js";
+import { PolyglotExecutor } from "../src/executor.js";
 import {
   detectRuntimes,
   buildCommand,
   getRuntimeSummary,
   type RuntimeMap,
-} from "../packages/core/src/runtime.js";
+} from "../src/runtime.js";
 
 const runtimes = detectRuntimes();
 const executor = new PolyglotExecutor({ runtimes });
@@ -1127,7 +1127,7 @@ describe("Windows Shell Support", () => {
   });
 
   test("getAvailableLanguages always includes shell", async () => {
-    const { getAvailableLanguages } = await import("../packages/core/src/runtime.js");
+    const { getAvailableLanguages } = await import("../src/runtime.js");
     const langs = getAvailableLanguages(runtimes);
     assert.ok(langs.includes("shell"), `shell should always be in available languages, got: ${langs}`);
   });

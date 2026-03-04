@@ -3,9 +3,9 @@
  * Tests ALL 5 tools with real-world use cases
  */
 
-import { PolyglotExecutor } from "../packages/core/src/executor.js";
-import { ContentStore } from "../packages/core/src/store.js";
-import { detectRuntimes } from "../packages/core/src/runtime.js";
+import { PolyglotExecutor } from "../src/executor.js";
+import { ContentStore } from "../src/store.js";
+import { detectRuntimes } from "../src/runtime.js";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";

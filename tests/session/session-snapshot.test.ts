@@ -10,7 +10,7 @@ import {
   renderErrors,
   renderIntent,
   type StoredEvent,
-} from "../../packages/session/src/snapshot.js";
+} from "../../src/session/snapshot.js";
 
 // ── Helpers ──
 function makeEvent(overrides: Partial<StoredEvent> & Pick<StoredEvent, "type" | "category">): StoredEvent {

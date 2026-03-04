@@ -9,8 +9,8 @@
  */
 
 import type { Database as DatabaseInstance } from "better-sqlite3";
-import { loadDatabase, applyWALPragmas } from "@context-mode/shared/db-base";
-import type { PreparedStatement } from "@context-mode/shared/db-base";
+import { loadDatabase, applyWALPragmas } from "./db-base.js";
+import type { PreparedStatement } from "./db-base.js";
 import { readFileSync, readdirSync, unlinkSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -25,8 +25,8 @@ interface Chunk {
   hasCode: boolean;
 }
 
-import type { IndexResult, SearchResult, StoreStats } from "@context-mode/shared/types";
-export type { IndexResult, SearchResult, StoreStats } from "@context-mode/shared/types";
+import type { IndexResult, SearchResult, StoreStats } from "./types.js";
+export type { IndexResult, SearchResult, StoreStats } from "./types.js";
 
 // ─────────────────────────────────────────────────────────
 // Constants

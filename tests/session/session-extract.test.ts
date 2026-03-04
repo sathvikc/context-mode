@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { describe, test } from "vitest";
-import { extractEvents, extractUserEvents } from "../../packages/session/src/extract.js";
+import { extractEvents, extractUserEvents } from "../../src/session/extract.js";
 
 // ════════════════════════════════════════════
 // SLICE 1: FILE EVENT EXTRACTION

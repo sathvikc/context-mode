@@ -10,7 +10,7 @@
 
 import { strict as assert } from "node:assert";
 import { describe, test } from "vitest";
-import { toUnixPath } from "../packages/core/src/cli.js";
+import { toUnixPath } from "../src/cli.js";
 
 describe("CLI Hook Path Tests", () => {
   test("toUnixPath: converts backslashes to forward slashes", () => {

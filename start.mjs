@@ -87,7 +87,7 @@ if (existsSync(resolve(__dirname, "server.bundle.mjs"))) {
   }
   if (!existsSync(resolve(__dirname, "build", "server.js"))) {
     try {
-      execSync("npx tsc -b --silent", { cwd: __dirname, stdio: "pipe", timeout: 30000 });
+      execSync("npx tsc --silent", { cwd: __dirname, stdio: "pipe", timeout: 30000 });
     } catch { /* best effort */ }
   }
   await import("./build/server.js");

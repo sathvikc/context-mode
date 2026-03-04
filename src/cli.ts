@@ -13,16 +13,30 @@
 import * as p from "@clack/prompts";
 import color from "picocolors";
 import { execSync } from "node:child_process";
-import { readFileSync, writeFileSync, copyFileSync, cpSync, chmodSync, accessSync, readdirSync, rmSync, constants } from "node:fs";
+import { readFileSync, cpSync, accessSync, readdirSync, rmSync, constants } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { homedir } from "node:os";
 import {
   detectRuntimes,
   getRuntimeSummary,
   hasBunRuntime,
   getAvailableLanguages,
 } from "./runtime.js";
+
+// ── Adapter imports ──────────────────────────────────────
+import {
+  readSettings,
+  getSettingsPath,
+  backupSettings,
+  configureHook,
+  validateHooks,
+  checkPluginRegistration,
+  getMarketplaceVersion,
+  updatePluginRegistry,
+  setHookPermissions,
+  writeSettings,
+} from "./adapters/claude-code/config.js";
+import { HOOK_TYPES } from "./adapters/claude-code/hooks.js";
 
 const args = process.argv.slice(2);
 
@@ -52,23 +66,6 @@ function getPluginRoot(): string {
   return resolve(__dirname, "..");
 }
 
-function getSettingsPath(): string {
-  return resolve(homedir(), ".claude", "settings.json");
-}
-
-function readSettings(): Record<string, unknown> | null {
-  try {
-    const raw = readFileSync(getSettingsPath(), "utf-8");
-    return JSON.parse(raw) as Record<string, unknown>;
-  } catch {
-    return null;
-  }
-}
-
-function getHookScriptPath(): string {
-  return resolve(getPluginRoot(), "hooks", "pretooluse.mjs");
-}
-
 function getLocalVersion(): string {
   try {
     const pkg = JSON.parse(readFileSync(resolve(getPluginRoot(), "package.json"), "utf-8"));
@@ -87,50 +84,6 @@ async function fetchLatestVersion(): Promise<string> {
   } catch {
     return "unknown";
   }
-}
-
-function getMarketplaceVersion(): string {
-  // Primary: read from installed_plugins.json (source of truth for Claude Code)
-  try {
-    const ipPath = resolve(homedir(), ".claude", "plugins", "installed_plugins.json");
-    const ipRaw = JSON.parse(readFileSync(ipPath, "utf-8"));
-    const plugins = ipRaw.plugins ?? {};
-    for (const [key, entries] of Object.entries(plugins)) {
-      if (!key.toLowerCase().includes("context-mode")) continue;
-      const arr = entries as Array<Record<string, unknown>>;
-      if (arr.length > 0 && typeof arr[0].version === "string") {
-        return arr[0].version;
-      }
-    }
-  } catch { /* fallback below */ }
-
-  // Fallback: read from own package.json
-  const localVer = getLocalVersion();
-  if (localVer !== "unknown") return localVer;
-
-  // Last resort: scan common plugin cache locations
-  const bases = [
-    resolve(homedir(), ".claude"),
-    resolve(homedir(), ".config", "claude"),
-  ];
-  for (const base of bases) {
-    const cacheDir = resolve(base, "plugins", "cache", "claude-context-mode", "context-mode");
-    try {
-      const entries = readdirSync(cacheDir);
-      const versions = entries
-        .filter((e) => /^\d+\.\d+\.\d+/.test(e))
-        .sort((a, b) => {
-          const pa = a.split(".").map(Number);
-          const pb = b.split(".").map(Number);
-          for (let i = 0; i < 3; i++) {
-            if ((pa[i] ?? 0) !== (pb[i] ?? 0)) return (pa[i] ?? 0) - (pb[i] ?? 0);
-          }
-          return 0;
-        });
-      if (versions.length > 0) return versions[versions.length - 1];
-    } catch { /* continue */ }
-  }
-  return "not installed";
 }
 
 function semverGt(a: string, b: string): boolean {
@@ -232,68 +185,26 @@ async function doctor(): Promise<number> {
     }
   }
 
-  // Hooks installed
+  // Hooks installed — using adapter validation
   p.log.step("Checking hooks configuration...");
-  const settings = readSettings();
-  const hookScriptPath = getHookScriptPath();
+  const pluginRoot = getPluginRoot();
+  const hookResults = validateHooks(pluginRoot);
 
-  if (settings) {
-    const hooks = settings.hooks as Record<string, unknown[]> | undefined;
-    const preToolUse = hooks?.PreToolUse as Array<{ matcher?: string; hooks?: Array<{ command?: string }> }> | undefined;
-
-    if (preToolUse && preToolUse.length > 0) {
-      const hasCorrectHook = preToolUse.some((entry) =>
-        entry.hooks?.some((h) => h.command?.includes("pretooluse.mjs")),
-      );
-      if (hasCorrectHook) {
-        p.log.success(color.green("Hooks installed: PASS") + " — PreToolUse hook configured");
-      } else {
-        p.log.error(
-          color.red("Hooks installed: FAIL") +
-            " — PreToolUse exists but does not point to pretooluse.mjs" +
-            color.dim("\n  Run: npx context-mode upgrade"),
-        );
-      }
+  for (const result of hookResults) {
+    if (result.status === "pass") {
+      p.log.success(color.green(`${result.hookType} hook: PASS`) + ` — ${result.message}`);
     } else {
       p.log.error(
-        color.red("Hooks installed: FAIL") +
-          " — No PreToolUse hooks found" +
+        color.red(`${result.hookType} hook: FAIL`) +
+          ` — ${result.message}` +
           color.dim("\n  Run: npx context-mode upgrade"),
       );
     }
-
-    // Check SessionStart hook
-    const sessionStart = hooks?.SessionStart as Array<{ matcher?: string; hooks?: Array<{ command?: string }> }> | undefined;
-    if (sessionStart && sessionStart.length > 0) {
-      const hasSessionHook = sessionStart.some((entry) =>
-        entry.hooks?.some((h) => h.command?.includes("sessionstart.mjs")),
-      );
-      if (hasSessionHook) {
-        p.log.success(color.green("SessionStart hook: PASS") + " — SessionStart hook configured");
-      } else {
-        p.log.error(
-          color.red("SessionStart hook: FAIL") +
-            " — SessionStart exists but does not point to sessionstart.mjs" +
-            color.dim("\n  Run: npx context-mode upgrade"),
-        );
-      }
-    } else {
-      p.log.error(
-        color.red("SessionStart hook: FAIL") +
-          " — No SessionStart hooks found" +
-          color.dim("\n  Run: npx context-mode upgrade"),
-      );
-    }
-  } else {
-    p.log.error(
-      color.red("Hooks installed: FAIL") +
-        " — Could not read ~/.claude/settings.json" +
-        color.dim("\n  Run: npx context-mode upgrade"),
-    );
   }
 
   // Hook script exists
   p.log.step("Checking hook script...");
+  const hookScriptPath = resolve(pluginRoot, "hooks", "pretooluse.mjs");
   try {
     accessSync(hookScriptPath, constants.R_OK);
     p.log.success(color.green("Hook script exists: PASS") + color.dim(` — ${hookScriptPath}`));
@@ -304,34 +215,15 @@ async function doctor(): Promise<number> {
     );
   }
 
-  // Plugin enabled
+  // Plugin enabled — using adapter check
   p.log.step("Checking plugin registration...");
-  if (settings) {
-    const enabledPlugins = settings.enabledPlugins as Record<string, boolean> | undefined;
-    if (enabledPlugins) {
-      const pluginKey = Object.keys(enabledPlugins).find((k) =>
-        k.startsWith("context-mode"),
-      );
-      if (pluginKey && enabledPlugins[pluginKey]) {
-        p.log.success(color.green("Plugin enabled: PASS") + color.dim(` — ${pluginKey}`));
-      } else {
-        p.log.warn(
-          color.yellow("Plugin enabled: WARN") +
-            " — context-mode not in enabledPlugins" +
-            color.dim(" (might be using standalone MCP mode)"),
-        );
-      }
-    } else {
-      p.log.warn(
-        color.yellow("Plugin enabled: WARN") +
-          " — no enabledPlugins section found" +
-          color.dim(" (might be using standalone MCP mode)"),
-      );
-    }
+  const pluginCheck = checkPluginRegistration();
+  if (pluginCheck.status === "pass") {
+    p.log.success(color.green("Plugin enabled: PASS") + color.dim(` — ${pluginCheck.pluginKey}`));
   } else {
     p.log.warn(
       color.yellow("Plugin enabled: WARN") +
-        " — could not read settings.json",
+        ` — ${pluginCheck.message}`,
     );
   }
 
@@ -439,7 +331,6 @@ async function upgrade() {
   p.intro(color.bgCyan(color.black(" context-mode upgrade ")));
 
   let pluginRoot = getPluginRoot();
-  const settingsPath = getSettingsPath();
   const changes: string[] = [];
   const s = p.spinner();
 
@@ -520,21 +411,9 @@ async function upgrade() {
     }
     s.stop(color.green(`Updated in-place to v${newVersion}`));
 
-    // Fix registry to point back to this pluginRoot (self-heal may have changed it)
-    try {
-      const ipPath = resolve(homedir(), ".claude", "plugins", "installed_plugins.json");
-      const ipRaw = JSON.parse(readFileSync(ipPath, "utf-8"));
-      for (const [key, entries] of Object.entries(ipRaw.plugins || {})) {
-        if (!key.toLowerCase().includes("context-mode")) continue;
-        for (const entry of (entries as Array<Record<string, unknown>>)) {
-          entry.installPath = pluginRoot;
-          entry.version = newVersion;
-          entry.lastUpdated = new Date().toISOString();
-        }
-      }
-      writeFileSync(ipPath, JSON.stringify(ipRaw, null, 2) + "\n", "utf-8");
-      p.log.info(color.dim("  Registry synced to " + pluginRoot));
-    } catch { /* best effort */ }
+    // Fix registry — using adapter
+    updatePluginRegistry(pluginRoot, newVersion);
+    p.log.info(color.dim("  Registry synced to " + pluginRoot));
 
     // Install production deps (rebuild native modules if needed)
     s.start("Installing production dependencies");
@@ -580,105 +459,38 @@ async function upgrade() {
     try { rmSync(tmpDir, { recursive: true, force: true }); } catch { /* ignore */ }
   }
 
-  // Step 3: Backup settings.json
+  // Step 3: Backup settings.json — using adapter
   p.log.step("Backing up settings.json...");
-  try {
-    accessSync(settingsPath, constants.R_OK);
-    const backupPath = settingsPath + ".bak";
-    copyFileSync(settingsPath, backupPath);
+  const backupPath = backupSettings();
+  if (backupPath) {
     p.log.success(color.green("Backup created") + color.dim(" -> " + backupPath));
     changes.push("Backed up settings.json");
-  } catch {
+  } else {
     p.log.warn(
       color.yellow("No existing settings.json to backup") +
         " — a new one will be created",
     );
   }
 
-  // Step 4: Fix hooks
-  p.log.step("Configuring PreToolUse hooks...");
-  const hookScriptPath = toUnixPath(resolve(pluginRoot, "hooks", "pretooluse.mjs"));
+  // Step 4: Fix hooks — using adapter
+  p.log.step("Configuring hooks...");
   const settings = readSettings() ?? {};
 
-  const desiredHookEntry = {
-    matcher: "Bash|Read|Grep|WebFetch|Task|mcp__plugin_context-mode_context-mode__execute|mcp__plugin_context-mode_context-mode__execute_file|mcp__plugin_context-mode_context-mode__batch_execute",
-    hooks: [
-      {
-        type: "command",
-        command: "node " + hookScriptPath,
-      },
-    ],
-  };
+  const hookTypes = [
+    HOOK_TYPES.PRE_TOOL_USE,
+    HOOK_TYPES.SESSION_START,
+  ] as const;
 
-  const hooks = (settings.hooks ?? {}) as Record<string, unknown>;
-  const existingPreToolUse = hooks.PreToolUse as Array<Record<string, unknown>> | undefined;
-
-  if (existingPreToolUse && Array.isArray(existingPreToolUse)) {
-    const existingIdx = existingPreToolUse.findIndex((entry) => {
-      const entryHooks = entry.hooks as Array<{ command?: string }> | undefined;
-      return entryHooks?.some((h) => h.command?.includes("pretooluse.mjs"));
-    });
-
-    if (existingIdx >= 0) {
-      existingPreToolUse[existingIdx] = desiredHookEntry;
-      p.log.info(color.dim("Updated existing PreToolUse hook entry"));
-      changes.push("Updated existing PreToolUse hook entry");
-    } else {
-      existingPreToolUse.push(desiredHookEntry);
-      p.log.info(color.dim("Added PreToolUse hook entry"));
-      changes.push("Added PreToolUse hook entry to existing hooks");
-    }
-    hooks.PreToolUse = existingPreToolUse;
-  } else {
-    hooks.PreToolUse = [desiredHookEntry];
-    p.log.info(color.dim("Created PreToolUse hooks section"));
-    changes.push("Created PreToolUse hooks section");
+  for (const hookType of hookTypes) {
+    const result = configureHook(settings, hookType, pluginRoot);
+    p.log.info(color.dim(`  ${result}`));
+    changes.push(result);
   }
 
-  // --- SessionStart hook ---
-  p.log.step("Configuring SessionStart hook...");
-  const sessionHookScriptPath = resolve(pluginRoot, "hooks", "sessionstart.mjs");
-
-  const desiredSessionHookEntry = {
-    matcher: "",
-    hooks: [
-      {
-        type: "command",
-        command: "node " + sessionHookScriptPath,
-      },
-    ],
-  };
-
-  const existingSessionStart = hooks.SessionStart as Array<Record<string, unknown>> | undefined;
-
-  if (existingSessionStart && Array.isArray(existingSessionStart)) {
-    const existingSessionIdx = existingSessionStart.findIndex((entry) => {
-      const entryHooks = entry.hooks as Array<{ command?: string }> | undefined;
-      return entryHooks?.some((h) => h.command?.includes("sessionstart.mjs"));
-    });
-
-    if (existingSessionIdx >= 0) {
-      existingSessionStart[existingSessionIdx] = desiredSessionHookEntry;
-      p.log.info(color.dim("Updated existing SessionStart hook entry"));
-      changes.push("Updated existing SessionStart hook entry");
-    } else {
-      existingSessionStart.push(desiredSessionHookEntry);
-      p.log.info(color.dim("Added SessionStart hook entry"));
-      changes.push("Added SessionStart hook entry to existing hooks");
-    }
-    hooks.SessionStart = existingSessionStart;
-  } else {
-    hooks.SessionStart = [desiredSessionHookEntry];
-    p.log.info(color.dim("Created SessionStart hooks section"));
-    changes.push("Created SessionStart hooks section");
-  }
-
-  settings.hooks = hooks;
-
-  // Write updated settings
+  // Write updated settings — using adapter
   try {
-    writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + "\n", "utf-8");
-    p.log.success(color.green("Hooks configured") + color.dim(" -> " + settingsPath));
+    writeSettings(settings);
+    p.log.success(color.green("Hooks configured") + color.dim(" -> " + getSettingsPath()));
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     p.log.error(color.red("Failed to write settings.json") + " — " + message);
@@ -686,17 +498,16 @@ async function upgrade() {
     process.exit(1);
   }
 
-  // Step 5: Set hook script permissions
+  // Step 5: Set hook script permissions — using adapter
   p.log.step("Setting hook script permissions...");
-  try {
-    accessSync(hookScriptPath, constants.R_OK);
-    chmodSync(hookScriptPath, 0o755);
-    p.log.success(color.green("Permissions set") + color.dim(" — chmod +x " + hookScriptPath));
-    changes.push("Set pretooluse.mjs as executable");
-  } catch {
+  const permSet = setHookPermissions(pluginRoot);
+  if (permSet.length > 0) {
+    p.log.success(color.green("Permissions set") + color.dim(` — ${permSet.length} hook script(s)`));
+    changes.push(`Set ${permSet.length} hook scripts as executable`);
+  } else {
     p.log.error(
-      color.red("Hook script not found") +
-        color.dim(" — expected at " + hookScriptPath),
+      color.red("No hook scripts found") +
+        color.dim(" — expected in " + resolve(pluginRoot, "hooks")),
     );
   }
 
@@ -893,5 +704,3 @@ async function setup() {
       color.dim(available.length + " languages ready."),
   );
 }
-
-

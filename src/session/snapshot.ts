@@ -11,7 +11,7 @@
  *   P3-P4 (subagent, skill, role, data, intent):    15% = ~308 bytes
  */
 
-import { escapeXML, truncateString } from "@context-mode/shared/truncate";
+import { escapeXML, truncateString } from "../truncate.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
