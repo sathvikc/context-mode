@@ -421,6 +421,37 @@ npm install -g context-mode
 </details>
 
 <details>
+<summary><strong>Zed</strong></summary>
+
+**Step 1 — Install globally:**
+
+```bash
+npm install -g context-mode
+```
+
+**Step 2 — Add to Zed settings** (`~/.config/zed/settings.json`):
+
+```json
+{
+  "context_servers": {
+    "context-mode": {
+      "command": {
+        "path": "context-mode"
+      }
+    }
+  }
+}
+```
+
+**Step 3 — Restart Zed.** On first MCP server startup, an `AGENTS.md` routing instructions file is auto-created in your project root. Zed reads the MCP tools and the model learns to prefer context-mode sandbox tools.
+
+**About hooks:** Zed does not support hooks — there is no public hook or extension API for tool-use lifecycle events. The `AGENTS.md` routing instructions file is the only enforcement method (~60% compliance). The model receives the instructions at session start and sometimes follows them, but there is no programmatic interception.
+
+**Auto-detection:** context-mode detects Zed automatically via the MCP protocol handshake (`clientInfo.name`). No environment variables or manual platform configuration needed.
+
+</details>
+
+<details>
 <summary><strong>Pi Coding Agent</strong></summary>
 
 **Step 1 — Install the extension:**
@@ -540,15 +571,15 @@ Context Mode captures every meaningful event during your session and persists th
 
 Session continuity requires 4 hooks working together:
 
-| Hook | Role | Claude Code | Gemini CLI | VS Code Copilot | Cursor | OpenCode | OpenClaw | Codex CLI | Antigravity | Kiro | Pi |
-|---|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| **PostToolUse** | Captures events after each tool call | Yes | Yes | Yes | Yes | Plugin | Plugin | -- | -- | Yes | ✓ (via tool_result event) |
-| **UserPromptSubmit** | Captures user decisions and corrections | Yes | -- | -- | -- | -- | -- | -- | -- | -- | -- |
-| **PreCompact** | Builds snapshot before compaction | Yes | Yes | Yes | -- | Plugin | Plugin | -- | -- | -- | ✓ (via session_before_compact) |
-| **SessionStart** | Restores state after compaction or resume | Yes | Yes | Yes | -- | -- | Plugin | -- | -- | -- | ✓ (via session_start event) |
-| | **Session completeness** | **Full** | **High** | **High** | **Partial** | **High** | **High** | **--** | **--** | **Partial** | **High** |
+| Hook | Role | Claude Code | Gemini CLI | VS Code Copilot | Cursor | OpenCode | OpenClaw | Codex CLI | Antigravity | Kiro | Zed | Pi |
+|---|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| **PostToolUse** | Captures events after each tool call | Yes | Yes | Yes | Yes | Plugin | Plugin | -- | -- | Yes | -- | ✓ (via tool_result event) |
+| **UserPromptSubmit** | Captures user decisions and corrections | Yes | -- | -- | -- | -- | -- | -- | -- | -- | -- | -- |
+| **PreCompact** | Builds snapshot before compaction | Yes | Yes | Yes | -- | Plugin | Plugin | -- | -- | -- | -- | ✓ (via session_before_compact) |
+| **SessionStart** | Restores state after compaction or resume | Yes | Yes | Yes | -- | -- | Plugin | -- | -- | -- | -- | ✓ (via session_start event) |
+| | **Session completeness** | **Full** | **High** | **High** | **Partial** | **High** | **High** | **--** | **--** | **Partial** | **--** | **High** |
 
-> **Note:** Full session continuity (capture + snapshot + restore) works on **Claude Code**, **Gemini CLI**, **VS Code Copilot**, and **OpenCode**. **Cursor** captures tool events via `preToolUse`/`postToolUse`, but `sessionStart` is currently rejected by Cursor's validator ([forum report](https://forum.cursor.com/t/unknown-hook-type-sessionstart/149566)), so session restore after compaction is not available yet. **OpenCode** uses the `experimental.session.compacting` plugin hook for compaction recovery, but SessionStart is not yet available ([#14808](https://github.com/sst/opencode/issues/14808)), so startup/resume is not supported. **OpenClaw** uses native gateway plugin hooks (`api.on()`) for full session continuity. **Pi Coding Agent** provides high session continuity via extension hooks (`tool_call`, `tool_result`, `session_start`, `session_before_compact`). **Codex CLI**, **Antigravity**, and **Kiro** have no hook support in the current release, so session tracking is not available.
+> **Note:** Full session continuity (capture + snapshot + restore) works on **Claude Code**, **Gemini CLI**, **VS Code Copilot**, and **OpenCode**. **Cursor** captures tool events via `preToolUse`/`postToolUse`, but `sessionStart` is currently rejected by Cursor's validator ([forum report](https://forum.cursor.com/t/unknown-hook-type-sessionstart/149566)), so session restore after compaction is not available yet. **OpenCode** uses the `experimental.session.compacting` plugin hook for compaction recovery, but SessionStart is not yet available ([#14808](https://github.com/sst/opencode/issues/14808)), so startup/resume is not supported. **OpenClaw** uses native gateway plugin hooks (`api.on()`) for full session continuity. **Pi Coding Agent** provides high session continuity via extension hooks (`tool_call`, `tool_result`, `session_start`, `session_before_compact`). **Codex CLI**, **Antigravity**, **Kiro**, and **Zed** have no hook support in the current release, so session tracking is not available.
 
 <details>
 <summary><strong>What gets captured</strong></summary>
@@ -633,6 +664,8 @@ Detailed event data is also indexed into FTS5 for on-demand retrieval via `searc
 
 **Antigravity** — No session support. Same as Codex CLI — no hooks, no event capture. The `GEMINI.md` routing instructions file is auto-written on first MCP server startup. Auto-detected via MCP protocol handshake (`clientInfo.name`).
 
+**Zed** — No session support. Same as Codex CLI — no hooks, no event capture. The `AGENTS.md` routing instructions file is auto-written on first MCP server startup. Auto-detected via MCP protocol handshake (`clientInfo.name`).
+
 **Kiro** — Partial coverage. Native `preToolUse` and `postToolUse` hooks capture tool events and enforce sandbox routing. `agentSpawn` (the Kiro equivalent of SessionStart) is not yet implemented, so session restore after compaction is not available. The `KIRO.md` routing instructions file is auto-written on first session start. Auto-detected via MCP protocol handshake (`clientInfo.name`).
 
 **Pi Coding Agent** — High coverage. The extension registers all key lifecycle events: `tool_call` (PreToolUse), `tool_result` (PostToolUse), `session_start` (SessionStart), and `session_before_compact` (PreCompact). File edits, git ops, errors, and tasks are fully tracked. Session restore after compaction works via the extension's event hooks. The `AGENTS.md` routing instructions file is auto-written on first session start.
@@ -641,26 +674,28 @@ Detailed event data is also indexed into FTS5 for on-demand retrieval via `searc
 
 ## Platform Compatibility
 
-| Feature | Claude Code | Gemini CLI | VS Code Copilot | Cursor | OpenCode | OpenClaw | Codex CLI | Antigravity | Kiro | Pi |
-|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| MCP Server | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes |
-| PreToolUse Hook | Yes | Yes | Yes | Yes | Plugin | Plugin | -- | -- | Yes | Yes (extension) |
-| PostToolUse Hook | Yes | Yes | Yes | Yes | Plugin | Plugin | -- | -- | Yes | Yes (extension) |
-| SessionStart Hook | Yes | Yes | Yes | -- | -- | Plugin | -- | -- | -- | Yes (extension) |
-| PreCompact Hook | Yes | Yes | Yes | -- | Plugin | Plugin | -- | -- | -- | Yes (extension) |
-| Can Modify Args | Yes | Yes | Yes | Yes | Plugin | Plugin | -- | -- | -- | Yes (extension) |
-| Can Block Tools | Yes | Yes | Yes | Yes | Plugin | Plugin | -- | -- | Yes | Yes (extension) |
-| Utility Commands (ctx) | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes (/ctx-stats, /ctx-doctor) |
-| Slash Commands | Yes | -- | -- | -- | -- | -- | -- | -- | -- | -- |
-| Plugin Marketplace | Yes | -- | -- | -- | -- | -- | -- | -- | -- | -- |
+| Feature | Claude Code | Gemini CLI | VS Code Copilot | Cursor | OpenCode | OpenClaw | Codex CLI | Antigravity | Kiro | Zed | Pi |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| MCP Server | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes |
+| PreToolUse Hook | Yes | Yes | Yes | Yes | Plugin | Plugin | -- | -- | Yes | -- | Yes (extension) |
+| PostToolUse Hook | Yes | Yes | Yes | Yes | Plugin | Plugin | -- | -- | Yes | -- | Yes (extension) |
+| SessionStart Hook | Yes | Yes | Yes | -- | -- | Plugin | -- | -- | -- | -- | Yes (extension) |
+| PreCompact Hook | Yes | Yes | Yes | -- | Plugin | Plugin | -- | -- | -- | -- | Yes (extension) |
+| Can Modify Args | Yes | Yes | Yes | Yes | Plugin | Plugin | -- | -- | -- | -- | Yes (extension) |
+| Can Block Tools | Yes | Yes | Yes | Yes | Plugin | Plugin | -- | -- | Yes | -- | Yes (extension) |
+| Utility Commands (ctx) | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes (/ctx-stats, /ctx-doctor) |
+| Slash Commands | Yes | -- | -- | -- | -- | -- | -- | -- | -- | -- | -- |
+| Plugin Marketplace | Yes | -- | -- | -- | -- | -- | -- | -- | -- | -- | -- |
 
 > **OpenCode** uses a TypeScript plugin paradigm — hooks run as in-process functions via `tool.execute.before`, `tool.execute.after`, and `experimental.session.compacting`, providing the same routing enforcement and session continuity as shell-based hooks. SessionStart is not yet available ([#14808](https://github.com/sst/opencode/issues/14808)), but compaction recovery works via the plugin's compacting hook.
 >
 > **OpenClaw** runs context-mode as a native gateway plugin targeting Pi Agent sessions. Hooks register via `api.on()` (tool/lifecycle) and `api.registerHook()` (commands). All tool interception and compaction hooks are supported. See [`docs/adapters/openclaw.md`](docs/adapters/openclaw.md).
 >
-> **Codex CLI** and **Antigravity** do not support hooks. They rely solely on routing instruction files (`AGENTS.md` / `GEMINI.md`) for enforcement (~60% compliance). Antigravity is auto-detected via MCP protocol handshake — no manual platform configuration needed.
+> **Codex CLI**, **Antigravity**, and **Zed** do not support hooks. They rely solely on routing instruction files (`AGENTS.md` / `GEMINI.md`) for enforcement (~60% compliance). Antigravity and Zed are auto-detected via MCP protocol handshake — no manual platform configuration needed.
 >
 > **Kiro** supports native `preToolUse` and `postToolUse` hooks for routing enforcement and tool event capture. `agentSpawn` (SessionStart equivalent) and `stop` are not yet wired. Kiro is auto-detected via MCP protocol handshake (`clientInfo.name`).
+>
+> **Zed** does not support hooks. It relies solely on the `AGENTS.md` routing instructions file for enforcement (~60% compliance). Zed is auto-detected via MCP protocol handshake — no manual platform configuration needed.
 >
 > **Pi Coding Agent** runs context-mode as an extension with full hook support. The extension registers `tool_call`, `tool_result`, `session_start`, and `session_before_compact` events, providing high session continuity coverage. The MCP server provides the 6 sandbox tools.
 
@@ -679,6 +714,7 @@ Hooks intercept tool calls programmatically — they can block dangerous command
 | Codex CLI | -- | [`AGENTS.md`](configs/codex/AGENTS.md) | -- | ~60% saved |
 | Antigravity | -- | [`GEMINI.md`](configs/antigravity/GEMINI.md) | -- | ~60% saved |
 | Kiro | Yes | [`KIRO.md`](configs/kiro/KIRO.md) | **~98% saved** | ~60% saved |
+| Zed | -- | [`AGENTS.md`](configs/zed/AGENTS.md) | -- | ~60% saved |
 | Pi | ✓ | [`AGENTS.md`](configs/pi/AGENTS.md) | **~98% saved** | ~60% saved |
 
 Without hooks, one unrouted `curl` or Playwright snapshot can dump 56 KB into context — wiping out an entire session's worth of savings.

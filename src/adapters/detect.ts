@@ -47,7 +47,7 @@ export function detectPlatform(clientInfo?: { name: string; version?: string }):
   if (platformOverride) {
     const validPlatforms: PlatformId[] = [
       "claude-code", "gemini-cli", "opencode", "codex",
-      "vscode-copilot", "cursor", "antigravity", "kiro", "pi",
+      "vscode-copilot", "cursor", "antigravity", "kiro", "pi", "zed",
     ];
     if (validPlatforms.includes(platformOverride as PlatformId)) {
       return {
@@ -184,6 +184,14 @@ export function detectPlatform(clientInfo?: { name: string; version?: string }):
     };
   }
 
+  if (existsSync(resolve(home, ".config", "zed"))) {
+    return {
+      platform: "zed",
+      confidence: "medium",
+      reason: "~/.config/zed/ directory exists",
+    };
+  }
+
   // ── Low confidence: fallback ───────────────────────────
 
   return {
@@ -244,6 +252,11 @@ export async function getAdapter(platform?: PlatformId): Promise<HookAdapter> {
     case "kiro": {
       const { KiroAdapter } = await import("./kiro/index.js");
       return new KiroAdapter();
+    }
+
+    case "zed": {
+      const { ZedAdapter } = await import("./zed/index.js");
+      return new ZedAdapter();
     }
 
     default: {
