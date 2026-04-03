@@ -294,7 +294,7 @@ export class CodexAdapter implements HookAdapter {
         check: "Hook support",
         status: "warn",
         message:
-          "Codex CLI hooks (PreToolUse, PostToolUse, SessionStart) are behind the `codex_hooks` feature flag (Stage::UnderDevelopment, default_enabled: false). Hooks work locally but may not fire in production until OpenAI enables the flag server-side.",
+          "Codex CLI hooks require codex_hooks feature flag (disabled by default). Enable: [features] codex_hooks = true in ~/.codex/config.toml or codex --enable codex_hooks per-session.",
       },
     ];
   }

@@ -412,7 +412,18 @@ Full documentation: [`docs/adapters/openclaw.md`](docs/adapters/openclaw.md)
    command = "context-mode"
    ```
 
-3. Add hooks for routing enforcement and session tracking. **Note:** Codex CLI hooks are behind the `codex_hooks` feature flag (disabled by default as of v0.118). Hooks work locally but may not fire in production until OpenAI enables the flag. Create `~/.codex/hooks.json`:
+3. Enable the hooks feature flag. Add to `~/.codex/config.toml`:
+
+   ```toml
+   [features]
+   codex_hooks = true
+   ```
+
+   Or per-session: `codex --enable codex_hooks`
+
+   > **Why:** Codex CLI hooks are behind the `codex_hooks` feature flag (`Stage::UnderDevelopment`, disabled by default). Without this, hooks won't fire. Source: [`codex-rs/features/src/lib.rs:656`](https://github.com/openai/codex/blob/main/codex-rs/features/src/lib.rs).
+
+4. Add hooks for routing enforcement and session tracking. Create `~/.codex/hooks.json`:
 
    ```json
    {
@@ -426,7 +437,7 @@ Full documentation: [`docs/adapters/openclaw.md`](docs/adapters/openclaw.md)
 
    `PreToolUse` enforces sandbox routing (blocks dangerous commands, redirects to MCP tools). `PostToolUse` captures session events. `SessionStart` restores state after compaction.
 
-4. Copy routing instructions (recommended even with hooks for full routing awareness):
+5. Copy routing instructions (recommended even with hooks for full routing awareness):
 
    ```bash
    cp node_modules/context-mode/configs/codex/AGENTS.md ./AGENTS.md
@@ -434,11 +445,13 @@ Full documentation: [`docs/adapters/openclaw.md`](docs/adapters/openclaw.md)
 
    For global use: `cp node_modules/context-mode/configs/codex/AGENTS.md ~/.codex/AGENTS.md`. Global applies to all projects. If both exist, Codex CLI merges them.
 
-5. Restart Codex CLI.
+6. Restart Codex CLI.
 
 **Verify:** Start a session and type `ctx stats`. Context-mode tools should appear and respond.
 
 **Routing:** Hooks enforce routing programmatically via PreToolUse. PostToolUse tracks session events. SessionStart restores state. The optional AGENTS.md file provides routing instructions for model awareness. Codex CLI's hook system uses the same JSON stdin/stdout wire protocol as Claude Code but does not support arg or output modification.
+
+> **Exec mode limitation:** `codex exec` cancels all MCP tool calls because headless mode rejects `RequestUserInput`. Use interactive mode (`codex`) or `codex --full-auto` instead. This is an upstream Codex limitation, not a context-mode issue.
 
 </details>
 
