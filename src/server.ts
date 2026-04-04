@@ -27,6 +27,7 @@ import { classifyNonZeroExit } from "./exit-classify.js";
 import { startLifecycleGuard } from "./lifecycle.js";
 import { getWorktreeSuffix } from "./session/db.js";
 import { loadDatabase } from "./db-base.js";
+import { AnalyticsEngine } from "./session/analytics.js";
 const __pkg_dir = dirname(fileURLToPath(import.meta.url));
 const VERSION: string = (() => {
   for (const rel of ["../package.json", "./package.json"]) {
@@ -1836,6 +1837,111 @@ server.registerTool(
 
           lines.push("");
           lines.push(`> **Note:** Previous session data is loaded when you start a new session. Without \`--continue\`, old session history is cleaned up to keep the database lean.`);
+        }
+
+        // ── Analytics ──
+        try {
+          const analytics = new AnalyticsEngine(sdb);
+
+          // Get latest session_id for session-scoped metrics
+          const latestSession = sdb.prepare(
+            "SELECT session_id FROM session_meta ORDER BY started_at DESC LIMIT 1",
+          ).get() as { session_id: string } | undefined;
+
+          const sid = latestSession?.session_id ?? "";
+
+          // Session metrics
+          const durationMin = sid ? analytics.sessionDuration(sid) : null;
+          const toolCalls = sid ? (sdb.prepare(
+            "SELECT COUNT(*) as cnt FROM session_events WHERE session_id = ? AND category = 'mcp'",
+          ).get(sid) as { cnt: number }).cnt : 0;
+
+          // Activity metrics
+          const commits = sid ? analytics.commitCount(sid) : 0;
+          const errors = sid ? analytics.errorCount(sid) : 0;
+          const errorRatePct = sid ? analytics.errorRate(sid) : 0;
+          const toolDiversity = sid ? analytics.toolDiversity(sid) : 0;
+          const efficiencyScore = sid ? analytics.efficiencyScore(sid) : 0;
+          const commitsPerSessionAvg = analytics.commitsPerSession();
+          const sessionOutcome = sid ? analytics.sessionOutcome(sid) : "exploratory";
+
+          // Pattern metrics
+          const hourlyRaw = analytics.hourlyProductivity(sid || undefined);
+          const hourlyCommits = Array.from({ length: 24 }, (_, i) => {
+            const h = String(i).padStart(2, "0");
+            return hourlyRaw.find((r) => r.hour === h)?.count ?? 0;
+          });
+          const weeklyTrend = analytics.weeklyTrend();
+          const iterationCycles = sid ? analytics.iterationCycles(sid) : 0;
+          const rework = sid ? analytics.reworkRate(sid) : analytics.reworkRate();
+
+          // Health metrics
+          const claudeMdFreshness = analytics.claudeMdFreshness().map((r) => {
+            const daysAgo = r.last_updated
+              ? Math.round((Date.now() - new Date(r.last_updated).getTime()) / 86_400_000)
+              : null;
+            return { project: r.data, days_ago: daysAgo };
+          });
+          const compactionsThisWeek = sid ? analytics.compactionCount(sid) : 0;
+          const weeklySessions = analytics.weeklySessionCount();
+          const permissionDenials = sid ? analytics.permissionDenials(sid) : 0;
+
+          // Agent metrics
+          const subagents = sid
+            ? analytics.subagentUsage(sid).map((r) => ({ type: r.data, count: r.total }))
+            : [];
+          const skills = sid
+            ? analytics.skillUsage(sid).map((r) => ({ name: r.data, count: r.invocations }))
+            : [];
+
+          // Continuity total
+          const totalEvents = (sdb.prepare(
+            "SELECT COUNT(*) as cnt FROM session_events",
+          ).get() as { cnt: number }).cnt;
+
+          const analyticsJson = {
+            session: {
+              duration_min: durationMin !== null ? Math.round(durationMin * 10) / 10 : null,
+              tool_calls: toolCalls,
+            },
+            activity: {
+              commits,
+              errors,
+              error_rate_pct: errorRatePct,
+              tool_diversity: toolDiversity,
+              efficiency_score: efficiencyScore,
+              commits_per_session_avg: commitsPerSessionAvg,
+              session_outcome: sessionOutcome,
+            },
+            patterns: {
+              hourly_commits: hourlyCommits,
+              weekly_trend: weeklyTrend,
+              iteration_cycles: iterationCycles,
+              rework: rework.map((r) => ({ file: r.data, edits: r.edits })),
+            },
+            health: {
+              claude_md_freshness: claudeMdFreshness,
+              compactions_this_week: compactionsThisWeek,
+              weekly_sessions: weeklySessions,
+              permission_denials: permissionDenials,
+            },
+            agents: {
+              subagents,
+              skills,
+            },
+            continuity: { total_events: totalEvents },
+          };
+
+          lines.push(
+            "",
+            "### Analytics (27 metrics)",
+            "",
+            "```json",
+            JSON.stringify(analyticsJson, null, 2),
+            "```",
+          );
+        } catch {
+          // AnalyticsEngine failed — skip analytics section silently
         }
 
         sdb.close();
