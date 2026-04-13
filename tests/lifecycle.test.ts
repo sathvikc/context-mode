@@ -107,6 +107,67 @@ describe("Lifecycle Guard", () => {
     assert.equal(shutdownCalled, false);
   });
 
+  test("cleanup does NOT remove stdin listeners (stdin is not used)", async () => {
+    // Capture listeners before guard starts
+    const stdinListenersBefore = process.stdin.listenerCount("close")
+      + process.stdin.listenerCount("end")
+      + process.stdin.listenerCount("data")
+      + process.stdin.listenerCount("error")
+      + process.stdin.listenerCount("readable");
+
+    const cleanup = startLifecycleGuard({
+      checkIntervalMs: 50,
+      onShutdown: () => {},
+      isParentAlive: () => true,
+    });
+
+    // Capture listeners after guard starts
+    const stdinListenersAfterStart = process.stdin.listenerCount("close")
+      + process.stdin.listenerCount("end")
+      + process.stdin.listenerCount("data")
+      + process.stdin.listenerCount("error")
+      + process.stdin.listenerCount("readable");
+
+    cleanup();
+
+    // Capture listeners after cleanup
+    const stdinListenersAfterCleanup = process.stdin.listenerCount("close")
+      + process.stdin.listenerCount("end")
+      + process.stdin.listenerCount("data")
+      + process.stdin.listenerCount("error")
+      + process.stdin.listenerCount("readable");
+
+    // Guard should not have added any stdin listeners
+    assert.equal(stdinListenersAfterStart, stdinListenersBefore,
+      "startLifecycleGuard must not add stdin listeners");
+    // Cleanup should not have removed any stdin listeners
+    assert.equal(stdinListenersAfterCleanup, stdinListenersBefore,
+      "cleanup must not remove stdin listeners");
+  });
+
+  test("startLifecycleGuard does NOT call process.stdin.resume()", async () => {
+    let resumeCalled = false;
+    const originalResume = process.stdin.resume.bind(process.stdin);
+    process.stdin.resume = (() => { resumeCalled = true; return originalResume(); }) as typeof process.stdin.resume;
+
+    try {
+      const cleanup = startLifecycleGuard({
+        checkIntervalMs: 50,
+        onShutdown: () => {},
+        isParentAlive: () => true,
+      });
+
+      // Give one tick to ensure any async resume would have fired
+      await new Promise((r) => setTimeout(r, 100));
+
+      cleanup();
+      assert.equal(resumeCalled, false, "process.stdin.resume() must not be called by lifecycle guard");
+    } finally {
+      // Restore original resume to avoid polluting other tests
+      process.stdin.resume = originalResume;
+    }
+  });
+
   test("detects ppid=0 as dead parent (Windows behavior)", async () => {
     let shutdownCalled = false;
 
