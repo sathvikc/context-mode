@@ -38,6 +38,7 @@ export const PLATFORM_ENV_VARS = [
   ["codex", ["CODEX_CI", "CODEX_THREAD_ID"]],
   ["cursor", ["CURSOR_TRACE_ID", "CURSOR_CLI"]],
   ["vscode-copilot", ["VSCODE_PID", "VSCODE_CWD"]],
+  ["qwen-code", ["QWEN_PROJECT_DIR", "QWEN_SESSION_ID"]],
 ] as const satisfies ReadonlyArray<readonly [PlatformId, readonly string[]]>;
 
 /**
@@ -57,6 +58,14 @@ export function detectPlatform(clientInfo?: { name: string; version?: string }):
         reason: `MCP clientInfo.name="${clientInfo.name}"`,
       };
     }
+    // Qwen Code uses dynamic client names: qwen-cli-mcp-client-<serverName>
+    if (clientInfo.name.startsWith("qwen-cli-mcp-client")) {
+      return {
+        platform: "qwen-code",
+        confidence: "high",
+        reason: `MCP clientInfo.name="${clientInfo.name}" (qwen-cli pattern)`,
+      };
+    }
   }
 
   // ── Explicit platform override ────────────────────────
@@ -64,7 +73,7 @@ export function detectPlatform(clientInfo?: { name: string; version?: string }):
   if (platformOverride) {
     const validPlatforms: PlatformId[] = [
       "claude-code", "gemini-cli", "kilo", "opencode", "codex",
-      "vscode-copilot", "cursor", "antigravity", "kiro", "pi", "zed",
+      "vscode-copilot", "cursor", "antigravity", "kiro", "pi", "zed", "qwen-code",
     ];
     if (validPlatforms.includes(platformOverride as PlatformId)) {
       return {
@@ -136,6 +145,14 @@ export function detectPlatform(clientInfo?: { name: string; version?: string }):
       platform: "pi",
       confidence: "medium",
       reason: "~/.pi/ directory exists",
+    };
+  }
+
+  if (existsSync(resolve(home, ".qwen"))) {
+    return {
+      platform: "qwen-code",
+      confidence: "medium",
+      reason: "~/.qwen/ directory exists",
     };
   }
 
@@ -237,6 +254,11 @@ export async function getAdapter(platform?: PlatformId): Promise<HookAdapter> {
     case "zed": {
       const { ZedAdapter } = await import("./zed/index.js");
       return new ZedAdapter();
+    }
+
+    case "qwen-code": {
+      const { QwenCodeAdapter } = await import("./qwen-code/index.js");
+      return new QwenCodeAdapter();
     }
 
     default: {

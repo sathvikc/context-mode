@@ -34,6 +34,10 @@ describe("CLIENT_NAME_TO_PLATFORM", () => {
     expect(CLIENT_NAME_TO_PLATFORM["Kiro CLI"]).toBe("kiro");
   });
 
+  it("maps qwen-code client name to qwen-code platform", () => {
+    expect(CLIENT_NAME_TO_PLATFORM["qwen-code"]).toBe("qwen-code");
+  });
+
   it("returns undefined for unknown client name", () => {
     expect(CLIENT_NAME_TO_PLATFORM["some-unknown-client"]).toBeUndefined();
   });

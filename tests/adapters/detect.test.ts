@@ -9,6 +9,7 @@ import { VSCodeCopilotAdapter } from "../../src/adapters/vscode-copilot/index.js
 import { CursorAdapter } from "../../src/adapters/cursor/index.js";
 import { AntigravityAdapter } from "../../src/adapters/antigravity/index.js";
 import { KiroAdapter } from "../../src/adapters/kiro/index.js";
+import { QwenCodeAdapter } from "../../src/adapters/qwen-code/index.js";
 
 // ─────────────────────────────────────────────────────────
 // detectPlatform — env var detection
@@ -37,6 +38,7 @@ describe("detectPlatform", () => {
     delete process.env.CURSOR_TRACE_ID;
     delete process.env.VSCODE_PID;
     delete process.env.VSCODE_CWD;
+    delete process.env.QWEN_PROJECT_DIR;
     delete process.env.CONTEXT_MODE_PLATFORM;
     vi.restoreAllMocks();
   });
@@ -258,12 +260,27 @@ describe("detectPlatform", () => {
     expect(signal.platform).toBe("claude-code");
   });
 
+  // ── Qwen Code ──────────────────────────────────────────
+
+  it("detects qwen-code via QWEN_PROJECT_DIR env var", () => {
+    process.env.QWEN_PROJECT_DIR = "/some/project";
+    const signal = detectPlatform();
+    expect(signal.platform).toBe("qwen-code");
+    expect(signal.confidence).toBe("high");
+  });
+
+  it("detects qwen-code via qwen-cli-mcp-client pattern in clientInfo", () => {
+    const signal = detectPlatform({ name: "qwen-cli-mcp-client-context-mode" });
+    expect(signal.platform).toBe("qwen-code");
+    expect(signal.confidence).toBe("high");
+  });
+
   // ── Fallback ───────────────────────────────────────────
 
   it("returns a valid platform as default when no env vars are set", () => {
     // No env vars set — result depends on which config dirs exist on this machine.
     const signal = detectPlatform();
-    expect(["claude-code", "gemini-cli", "codex", "cursor", "opencode", "kilo", "openclaw", "vscode-copilot", "antigravity", "kiro", "pi", "zed"]).toContain(signal.platform);
+    expect(["claude-code", "gemini-cli", "codex", "cursor", "opencode", "kilo", "openclaw", "vscode-copilot", "antigravity", "kiro", "pi", "zed", "qwen-code"]).toContain(signal.platform);
   });
 });
 
@@ -321,6 +338,11 @@ describe("getAdapter", () => {
   it("returns KiroAdapter for kiro", async () => {
     const adapter = await getAdapter("kiro");
     expect(adapter).toBeInstanceOf(KiroAdapter);
+  });
+
+  it("returns QwenCodeAdapter for qwen-code", async () => {
+    const adapter = await getAdapter("qwen-code");
+    expect(adapter).toBeInstanceOf(QwenCodeAdapter);
   });
 
   it("returns ClaudeCodeAdapter for unknown platform", async () => {
