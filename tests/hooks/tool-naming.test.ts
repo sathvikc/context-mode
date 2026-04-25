@@ -155,7 +155,8 @@ describe("KNOWN_PLATFORMS", () => {
     expect(KNOWN_PLATFORMS).toContain("codex");
     expect(KNOWN_PLATFORMS).toContain("openclaw");
     expect(KNOWN_PLATFORMS).toContain("pi");
-    expect(KNOWN_PLATFORMS.length).toBeGreaterThanOrEqual(13);
+    expect(KNOWN_PLATFORMS).toContain("qwen-code");
+    expect(KNOWN_PLATFORMS.length).toBeGreaterThanOrEqual(14);
   });
 });
 

@@ -29,6 +29,7 @@ const TOOL_PREFIXES = {
   "codex":          (tool) => tool,
   "openclaw":       (tool) => tool,
   "pi":             (tool) => tool,
+  "qwen-code":      (tool) => `mcp__context-mode__${tool}`,
 };
 
 /**
