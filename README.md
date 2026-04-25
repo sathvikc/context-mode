@@ -507,9 +507,11 @@ Full documentation: [`docs/adapters/openclaw.md`](docs/adapters/openclaw.md)
    ```json
    {
      "hooks": {
-       "PreToolUse": [{ "matcher": "", "hooks": [{ "type": "command", "command": "node $(npm root -g)/context-mode/hooks/pretooluse.mjs" }] }],
-       "PostToolUse": [{ "matcher": "", "hooks": [{ "type": "command", "command": "node $(npm root -g)/context-mode/hooks/posttooluse.mjs" }] }],
-       "SessionStart": [{ "matcher": "", "hooks": [{ "type": "command", "command": "node $(npm root -g)/context-mode/hooks/sessionstart.mjs" }] }]
+       "PreToolUse": [{ "matcher": "", "hooks": [{ "type": "command", "command": "context-mode hook qwen-code pretooluse" }] }],
+       "PostToolUse": [{ "matcher": "", "hooks": [{ "type": "command", "command": "context-mode hook qwen-code posttooluse" }] }],
+       "SessionStart": [{ "matcher": "", "hooks": [{ "type": "command", "command": "context-mode hook qwen-code sessionstart" }] }],
+       "PreCompact": [{ "matcher": "", "hooks": [{ "type": "command", "command": "context-mode hook qwen-code precompact" }] }],
+       "UserPromptSubmit": [{ "matcher": "", "hooks": [{ "type": "command", "command": "context-mode hook qwen-code userpromptsubmit" }] }]
      }
    }
    ```
@@ -517,7 +519,7 @@ Full documentation: [`docs/adapters/openclaw.md`](docs/adapters/openclaw.md)
 4. Copy routing instructions:
 
    ```bash
-   cp $(npm root -g)/context-mode/configs/qwen-code/QWEN.md ./QWEN.md
+   context-mode setup --platform qwen-code
    ```
 
 5. Restart Qwen Code.

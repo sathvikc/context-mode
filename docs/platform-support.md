@@ -218,6 +218,39 @@ context-mode hook codex sessionstart
 
 ---
 
+### Qwen Code
+
+**Status:** Supported (MCP + hooks — identical wire protocol to Claude Code)
+
+**Hook Paradigm:** JSON stdin/stdout (same as Claude Code)
+
+Qwen Code (by Alibaba/Qwen team) uses the exact same hook wire protocol as Claude Code, verified from source (`hookRunner.ts`, `claude-converter.ts`). Hooks are configured inside `~/.qwen/settings.json` under the `hooks` key.
+
+**Hook Names:** `PreToolUse`, `PostToolUse`, `SessionStart`, `PreCompact`, `UserPromptSubmit` (Qwen supports 12 events total, context-mode uses these 5)
+
+**Blocking:** `permissionDecision: "deny"` or exit code 2
+**Arg Modification:** `updatedInput` in response
+**Output Modification:** `updatedMCPToolOutput` in response
+**Context Injection:** `additionalContext` in response
+
+**Configuration:**
+- Settings + hooks: `~/.qwen/settings.json`
+- MCP: `mcpServers` in settings.json
+- Sessions: `~/.qwen/context-mode/sessions/`
+
+**Detection:** MCP clientInfo (`qwen-cli-mcp-client-*` pattern), `QWEN_PROJECT_DIR` env var, or `~/.qwen/` config dir.
+
+**Hook Commands:**
+```
+context-mode hook qwen-code pretooluse
+context-mode hook qwen-code posttooluse
+context-mode hook qwen-code sessionstart
+context-mode hook qwen-code precompact
+context-mode hook qwen-code userpromptsubmit
+```
+
+---
+
 ### Antigravity
 
 **Status:** MCP-only (no hooks)
