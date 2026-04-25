@@ -9,6 +9,16 @@
  *   const report = engine.queryAll(runtimeStats);
  */
 
+function semverNewer(a: string, b: string): boolean {
+  const pa = a.split(".").map(Number);
+  const pb = b.split(".").map(Number);
+  for (let i = 0; i < 3; i++) {
+    if ((pa[i] ?? 0) > (pb[i] ?? 0)) return true;
+    if ((pa[i] ?? 0) < (pb[i] ?? 0)) return false;
+  }
+  return false;
+}
+
 
 // ─────────────────────────────────────────────────────────
 // Types
@@ -437,7 +447,7 @@ export function formatReport(report: FullReport, version?: string, latestVersion
     lines.push("");
     const versionStr = version ? `v${version}` : "context-mode";
     lines.push(versionStr);
-    if (version && latestVersion && latestVersion !== "unknown" && latestVersion !== version) {
+    if (version && latestVersion && latestVersion !== "unknown" && semverNewer(latestVersion, version)) {
       lines.push(`Update available: v${version} -> v${latestVersion}  |  ctx_upgrade`);
     }
     return lines.join("\n");

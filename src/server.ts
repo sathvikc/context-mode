@@ -264,9 +264,19 @@ function getUpgradeHint(): string {
   return "npm update -g context-mode";
 }
 
+function semverNewer(a: string, b: string): boolean {
+  const pa = a.split(".").map(Number);
+  const pb = b.split(".").map(Number);
+  for (let i = 0; i < 3; i++) {
+    if ((pa[i] ?? 0) > (pb[i] ?? 0)) return true;
+    if ((pa[i] ?? 0) < (pb[i] ?? 0)) return false;
+  }
+  return false;
+}
+
 function isOutdated(): boolean {
   if (!_latestVersion || _latestVersion === "unknown") return false;
-  return _latestVersion !== VERSION;
+  return semverNewer(_latestVersion, VERSION);
 }
 
 function shouldShowVersionWarning(): boolean {
