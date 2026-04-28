@@ -264,28 +264,6 @@ export class CodexAdapter extends BaseAdapter implements HookAdapter {
           ],
         },
       ],
-      UserPromptSubmit: [
-        {
-          matcher: "",
-          hooks: [
-            {
-              type: "command",
-              command: `node ${pluginRoot}/hooks/codex/userpromptsubmit.mjs`,
-            },
-          ],
-        },
-      ],
-      Stop: [
-        {
-          matcher: "",
-          hooks: [
-            {
-              type: "command",
-              command: `node ${pluginRoot}/hooks/codex/stop.mjs`,
-            },
-          ],
-        },
-      ],
     };
   }
 
