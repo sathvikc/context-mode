@@ -859,6 +859,35 @@ npm install -g context-mode
 | `ctx_upgrade` | Upgrade to latest version from GitHub, rebuild, reconfigure hooks. | — |
 | `ctx_purge` | Permanently deletes all indexed content from the knowledge base. | — |
 
+### Parallel I/O — opt-in concurrency
+
+Two batch tools accept `concurrency: N` (1–8, default 1) to fan out independent I/O operations:
+
+```js
+// Multi-URL research — fetches in parallel, FTS5 writes serial
+ctx_fetch_and_index({
+  requests: [
+    { url: "https://react.dev/...", source: "react" },
+    { url: "https://vue.org/...",  source: "vue" },
+    // ...
+  ],
+  concurrency: 5,
+})
+
+// Multi-API batch — gh, curl, dig, docker inspect
+ctx_batch_execute({
+  commands: [
+    { label: "issue-1", command: "gh issue view 1" },
+    { label: "issue-2", command: "gh issue view 2" },
+    // ...
+  ],
+  queries: ["..."],
+  concurrency: 4,
+})
+```
+
+**Use 4–8** for I/O-bound work (network, gh, curl). **Keep at 1** for CPU-bound (npm test, build, lint) or commands sharing state (ports, lock files, same-repo writes). Effective concurrency caps at `os.cpus().length` automatically. Indexing always serial regardless — only the fetches race.
+
 ## How the Sandbox Works
 
 Each `ctx_execute` call spawns an isolated subprocess with its own process boundary. Scripts can't access each other's memory or state. The subprocess runs your code, captures stdout, and only that stdout enters the conversation context. The raw data — log files, API responses, snapshots — never leaves the sandbox.
@@ -1219,6 +1248,25 @@ The pattern is `Tool(what to match)` where `*` means "anything".
 Commands chained with `&&`, `;`, or `|` are split — each part is checked separately. `echo hello && sudo rm -rf /tmp` is blocked because the `sudo` part matches the deny rule.
 
 **deny** always wins over **allow**. More specific (project-level) rules override global ones.
+
+### Network fetch hardening
+
+`ctx_fetch_and_index` blocks dangerous URL targets by default:
+
+- **Schemes**: only `http:` and `https:` allowed (no `file://`, `gopher://`, `javascript:`, `data:`).
+- **Cloud metadata + link-local**: `169.254.0.0/16` (incl. AWS/GCP/Azure IMDS endpoint `169.254.169.254`) hard-blocked even if a hostname resolves to it (DNS-rebinding defense).
+- **Multicast / reserved**: `224.0.0.0/4`, `0.0.0.0/8`, IPv6 `ff00::/8`, `fe80::/10` blocked.
+- **Loopback + RFC1918** (`localhost`, `127.x`, `10.x`, `172.16-31.x`, `192.168.x`, IPv6 `::1`, `fc00::/7`) **allowed by default** so local dev servers + internal-network fetches keep working.
+
+For hosted/CI environments where you want to block private targets too, set:
+
+```bash
+export CTX_FETCH_STRICT=1
+```
+
+That blocks loopback + RFC1918 + ULA in addition to the always-blocked ranges. Useful when context-mode runs as a shared service, not on a developer's own machine.
+
+`tool_input` for any `mcp__*` tool call is also redacted before persistence — keys matching `authorization`, `token`, `secret`, `password`, `api_key`, `cookie`, `signature`, `private_key` get masked to `[REDACTED]` so credentials in MCP arguments don't end up in the session DB.
 
 ## Contributing
 
