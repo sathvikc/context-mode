@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { CodexAdapter } from "../../src/adapters/codex/index.js";
+import { CodexAdapter, probeCodexCliVersion } from "../../src/adapters/codex/index.js";
 import { resolveSessionDbPath, SessionDB } from "../../src/session/db.js";
 
 describe("CodexAdapter", () => {
@@ -284,6 +284,29 @@ describe("CodexAdapter", () => {
     });
   });
 
+  // ── Version diagnostics ───────────────────────────────
+
+  describe("version diagnostics", () => {
+    it("reports standalone MCP mode instead of a missing platform plugin", () => {
+      expect(adapter.getInstalledVersion()).toBe("standalone");
+    });
+
+    it("trims Codex CLI version probe output", () => {
+      expect(probeCodexCliVersion(() => "codex-cli 0.132.0\n")).toBe("codex-cli 0.132.0");
+    });
+
+    it("returns null when the Codex CLI version probe fails", () => {
+      expect(probeCodexCliVersion(() => {
+        throw new Error("ENOENT");
+      })).toBeNull();
+    });
+
+    it("surfaces Codex CLI binary availability in diagnostics", () => {
+      const checks = adapter.validateHooks("");
+      expect(checks.some((result) => result.check === "Codex CLI binary")).toBe(true);
+    });
+  });
+
   // ── generateHookConfig ────────────────────────────────
 
   describe("generateHookConfig", () => {
@@ -551,7 +574,15 @@ describe("CodexAdapter", () => {
     it("passes when all required Codex hooks are configured", () => {
       adapter.configureAllHooks("/ignored/plugin/root");
       const results = adapter.validateHooks("/ignored/plugin/root");
-      expect(results.every((result) => result.status === "pass")).toBe(true);
+      // The "Codex CLI binary" check is a runtime environment probe added
+      // by PR #686 — it shells out to `codex --version` and reports `warn`
+      // when the binary is absent (e.g. CI runners without Codex installed).
+      // That probe is orthogonal to the hook-config validation this test is
+      // pinning, so exclude it from the all-pass assertion. Probe-specific
+      // behaviour (pass/warn shape) is covered separately by the unit tests
+      // around probeCodexCliVersion() at L295-299.
+      const configChecks = results.filter((r) => r.check !== "Codex CLI binary");
+      expect(configChecks.every((result) => result.status === "pass")).toBe(true);
       expect(results.map((result) => result.check)).toContain("PreCompact hook");
       expect(results.map((result) => result.check)).toContain("UserPromptSubmit hook");
       expect(results.map((result) => result.check)).toContain("Stop hook");
