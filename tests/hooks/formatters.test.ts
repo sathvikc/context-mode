@@ -75,13 +75,55 @@ describe("formatDecision", () => {
       expect(output.permissionDecision).toBe("ask");
     });
 
-    it("formats modify with hookSpecificOutput.updatedInput", () => {
+    // CC v2.1.x Bash tool ignores `updatedInput.command` substitution under
+    // `permissionDecision: "allow"` — original command runs unchanged. Verified
+    // via /diagnose Phase 4 forced-deny probe: only `permissionDecision: "deny"`
+    // is honored for Bash tool. Therefore the claude-code formatter MUST emit a
+    // deny shape for modify intent, extracting the echo-payload message into
+    // `permissionDecisionReason` so the user still sees the actionable guidance.
+    it("formats modify as deny shape (CC Bash ignores updatedInput.command — #-cc-updatedinput-regression)", () => {
       const result = claudeCodeFormat(modifyDecision) as Record<string, unknown>;
       expect(result).not.toBeNull();
 
       const output = result.hookSpecificOutput as Record<string, unknown>;
       expect(output.hookEventName).toBe("PreToolUse");
-      expect(output.updatedInput).toEqual(modifyDecision.updatedInput);
+      // MUST be deny — CC honors this and actually blocks the command.
+      expect(output.permissionDecision).toBe("deny");
+      // Reason extracted from `echo "..."` payload so the user sees the
+      // redirect guidance verbatim.
+      expect(output.permissionDecisionReason).toContain("context-mode: curl/wget blocked");
+      // updatedInput MUST NOT appear — CC ignores it for Bash and emitting it
+      // alongside deny is a contradictory shape.
+      expect(output.updatedInput).toBeUndefined();
+    });
+
+    // Fallback fires only when updatedInput.command does not match the
+    // `echo "..."` wrapper shape routing.mjs always produces. Even in this
+    // rare path the message MUST follow ADR-0003 CASE A voice:
+    //   - opens with "Redirected to <ctx_tool>" (affirmative, no "blocked")
+    //   - names the alternative tool via an imperative call
+    //   - affirms capability ("has full network access")
+    //   - ends with the canonical transient-DNS retry hint
+    //   - contains NO bare-NOT negations, no "blocked" / "BLOCKED"
+    it("falls back to ADR-0003 CASE A voice when echo payload cannot be extracted", () => {
+      const unparseable = { action: "modify", updatedInput: { command: "weird shape" } };
+      const result = claudeCodeFormat(unparseable) as Record<string, unknown>;
+      const output = result.hookSpecificOutput as Record<string, unknown>;
+      const reason = String(output.permissionDecisionReason);
+
+      // CASE A voice — REQUIRED affirmations.
+      expect(reason).toMatch(/^Redirected to /); // affirmative opening verb
+      expect(reason).toMatch(/Call ctx_execute\(/); // imperative call (alt 1)
+      expect(reason).toMatch(/ctx_fetch_and_index\(/); // alternative tool name
+      expect(reason).toContain("full network access"); // capability affirmation
+      expect(reason).toContain("Retry the same call on a transient DNS error"); // canonical retry hint
+
+      // CASE A voice — FORBIDDEN tokens (ADR-0003).
+      expect(reason).not.toMatch(/\bblocked\b/i); // reserved for CASE B
+      expect(reason).not.toMatch(/\bBLOCKED\b/); // bare-caps forbidden
+      expect(reason).not.toMatch(/\bDo NOT\b/); // bare-NOT negation forbidden
+      expect(reason).not.toMatch(/\bNOT a /); // bare-NOT negation forbidden
+      expect(reason).not.toMatch(/for context-window efficiency|for performance/); // org-rationale preface forbidden
     });
 
     it("formats context with hookSpecificOutput.additionalContext", () => {

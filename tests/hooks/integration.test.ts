@@ -92,21 +92,39 @@ function runHook(input: Record<string, unknown>, env?: Record<string, string>, {
   };
 }
 
-/** Assert hook redirects Bash command to an echo message via updatedInput */
-function assertRedirect(result: HookResult, substringInEcho: string) {
+/**
+ * Assert hook redirects Bash command via `permissionDecision: "deny"` + reason.
+ *
+ * CC v2.1.x Bash tool ignores `updatedInput.command` substitution under
+ * `permissionDecision: "allow"` — original command runs unchanged. Only
+ * `permissionDecision: "deny"` is honored for Bash blocking (verified via
+ * /diagnose Phase 4 forced-deny probe). The claude-code formatter now emits
+ * a deny shape for modify intent and surfaces the routing guidance via
+ * `permissionDecisionReason`.
+ */
+function assertRedirect(result: HookResult, substringInReason: string) {
   assert.equal(result.exitCode, 0, `Expected exit 0, got ${result.exitCode}`);
   assert.ok(result.stdout.length > 0, "Expected non-empty stdout for redirect");
   const parsed = JSON.parse(result.stdout);
   const hso = parsed.hookSpecificOutput;
   assert.ok(hso, "Expected hookSpecificOutput in response");
-  assert.ok(hso.updatedInput, "Expected updatedInput in hookSpecificOutput");
-  assert.ok(
-    hso.updatedInput.command.includes("echo"),
-    `Expected updatedInput.command to be an echo, got: ${hso.updatedInput.command}`,
+  assert.equal(
+    hso.permissionDecision,
+    "deny",
+    `Expected permissionDecision="deny" (CC Bash ignores updatedInput on allow), got: ${hso.permissionDecision}`,
   );
   assert.ok(
-    hso.updatedInput.command.includes(substringInEcho),
-    `Expected echo to contain "${substringInEcho}", got: ${hso.updatedInput.command}`,
+    typeof hso.permissionDecisionReason === "string" && hso.permissionDecisionReason.length > 0,
+    "Expected non-empty permissionDecisionReason",
+  );
+  assert.ok(
+    hso.permissionDecisionReason.includes(substringInReason),
+    `Expected reason to contain "${substringInReason}", got: ${hso.permissionDecisionReason}`,
+  );
+  assert.equal(
+    hso.updatedInput,
+    undefined,
+    "updatedInput MUST NOT appear alongside deny — CC ignores it for Bash",
   );
 }
 
@@ -622,14 +640,18 @@ describe("Plugin Tool Name Format in ROUTING_BLOCK", () => {
     assert.ok(!reason.includes(SHORT_PREFIX + "ctx_fetch_and_index"), "WebFetch deny must not contain short-form");
   });
 
-  test("Bash inline-HTTP redirect uses plugin-format execute tool name", () => {
+  test("Bash inline-HTTP redirect uses plugin-format execute tool name (in deny reason)", () => {
+    // CC v2.1.x Bash tool ignores updatedInput.command — the formatter now
+    // emits deny + permissionDecisionReason. The plugin-format tool name
+    // assertion moves from updatedInput.command to permissionDecisionReason.
     const bashCmd = "python3 -c 'import requests; requests.get(url)'";
     const result = runHook({ tool_name: "Bash", tool_input: { command: bashCmd } });
     assert.equal(result.exitCode, 0);
     const parsed = JSON.parse(result.stdout);
-    const cmd = parsed.hookSpecificOutput.updatedInput.command;
-    assert.ok(cmd.includes(PLUGIN_PREFIX + "ctx_execute"), "Expected plugin-format ctx_execute in inline-HTTP redirect");
-    assert.ok(!cmd.includes(SHORT_PREFIX + "ctx_execute"), "Inline-HTTP redirect must not contain short-form ctx_execute");
+    const reason = parsed.hookSpecificOutput.permissionDecisionReason;
+    assert.ok(typeof reason === "string" && reason.length > 0, "Expected non-empty permissionDecisionReason");
+    assert.ok(reason.includes(PLUGIN_PREFIX + "ctx_execute"), "Expected plugin-format ctx_execute in inline-HTTP redirect reason");
+    assert.ok(!reason.includes(SHORT_PREFIX + "ctx_execute"), "Inline-HTTP redirect must not contain short-form ctx_execute");
   });
 });
 
