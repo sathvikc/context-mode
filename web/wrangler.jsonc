@@ -1,0 +1,15 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "context-mode-web",
+  "main": "worker.js",
+  "compatibility_date": "2025-01-01",
+  "assets": {
+    "directory": "./",
+    "binding": "ASSETS",
+    "not_found_handling": "404-page"
+  },
+  "routes": [
+    { "pattern": "context-mode.com/*", "zone_name": "context-mode.com" },
+    { "pattern": "www.context-mode.com/*", "zone_name": "context-mode.com" }
+  ]
+}
