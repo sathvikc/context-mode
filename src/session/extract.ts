@@ -1745,7 +1745,6 @@ export function extractUserEvents(message: string): SessionEvent[] {
     const events: SessionEvent[] = [];
 
     events.push(...extractUserPlan(message));
-    events.push(...extractUserPromptFeatures(message));
     events.push(...extractUserDecision(message));
     events.push(...extractRole(message));
     events.push(...extractIntent(message));
@@ -1760,75 +1759,160 @@ export function extractUserEvents(message: string): SessionEvent[] {
 }
 
 /**
- * Algorithmic language classifier — no regex. Distinguishes Latin script
- * (incl. Latin-1, Extended-A/B for Turkish/German/etc.) from other scripts
- * (CJK, Cyrillic, Arabic, Hebrew, Devanagari…). Returns "mixed" when both
- * present, "latin" when neither has letters (digits/punctuation only).
+ * F1 §2 prompt-feature canonical shape — the platform persists these as
+ * typed columns (prompt_length, prompt_first_word, prompt_question_count,
+ * prompt_file_ref_count, prompt_path_ref_count). prompt_intent is Tier-3
+ * (LLM, runs on platform side, not bridge).
  */
-function classifyLanguage(message: string): "latin" | "non-latin" | "mixed" {
-  let latinCount = 0;
-  let nonLatinCount = 0;
-  for (const ch of message) {
-    const c = ch.codePointAt(0)!;
-    if (
-      (c >= 0x41 && c <= 0x5A) ||
-      (c >= 0x61 && c <= 0x7A) ||
-      (c >= 0xC0 && c <= 0xFF) ||
-      (c >= 0x100 && c <= 0x24F)
-    ) {
-      latinCount++;
-    } else if (c >= 0x370 && c <= 0x1CFF) {
-      nonLatinCount++;
-    } else if (c >= 0x2E80 && c <= 0x9FFF) {
-      nonLatinCount++;
-    } else if (c >= 0xA000 && c <= 0xD7FF) {
-      nonLatinCount++;
-    } else if (c >= 0x10000) {
-      nonLatinCount++;
-    }
-  }
-  if (latinCount > 0 && nonLatinCount === 0) return "latin";
-  if (nonLatinCount > 0 && latinCount === 0) return "non-latin";
-  if (latinCount === 0 && nonLatinCount === 0) return "latin";
-  return "mixed";
+export interface PromptFeatures {
+  prompt_length: number;
+  prompt_first_word: string;
+  prompt_question_count: number;
+  prompt_file_ref_count: number;
+  prompt_path_ref_count: number;
+}
+
+const FILE_EXTENSIONS = new Set([
+  "ts", "tsx", "js", "jsx", "mjs", "cjs",
+  "py", "rb", "go", "rs", "java", "kt", "swift",
+  "md", "json", "yml", "yaml", "toml", "sql", "sh",
+]);
+
+const PATH_PREFIXES = ["src/", "tests/", "test/", "docs/", "scripts/", "hooks/", "packages/"];
+
+/**
+ * Algorithmic word-char predicate — `[A-Za-z0-9_-]` without regex.
+ */
+function isFirstWordChar(c: number): boolean {
+  return (c >= 0x41 && c <= 0x5A) ||  // A-Z
+         (c >= 0x61 && c <= 0x7A) ||  // a-z
+         (c >= 0x30 && c <= 0x39) ||  // 0-9
+         c === 0x5F || c === 0x2D;    // _ -
+}
+
+function isPathSegmentChar(c: number): boolean {
+  return isFirstWordChar(c) || c === 0x2E || c === 0x2F; // . /
+}
+
+function isExtChar(c: number): boolean {
+  return (c >= 0x41 && c <= 0x5A) ||
+         (c >= 0x61 && c <= 0x7A) ||
+         (c >= 0x30 && c <= 0x39);
 }
 
 /**
- * Privacy-aware prompt-feature extractor (Issue #9).
- *
- * Captures AGGREGATE features only — length bucket, language script,
- * question/imperative shape, presence of code fence, presence of URL.
- * The raw prompt text is NEVER stored in the emitted event.
- *
- * Length buckets (chars): xs <10, s <50, m <200, l <800, xl >=800.
+ * Algorithmic first-word extraction — no regex.
+ * Skips leading whitespace, reads while char is a word char, lowercases,
+ * caps at 32 chars. Returns "" when no word chars exist (e.g., emoji-only).
  */
-function extractUserPromptFeatures(message: string): SessionEvent[] {
-  if (typeof message !== "string" || message.length === 0) return [];
+function extractFirstWord(prompt: string): string {
+  let i = 0;
+  while (i < prompt.length && prompt.charCodeAt(i) <= 0x20) i++;
 
-  const len = message.length;
-  let lengthBucket: string;
-  if (len < 10) lengthBucket = "xs";
-  else if (len < 50) lengthBucket = "s";
-  else if (len < 200) lengthBucket = "m";
-  else if (len < 800) lengthBucket = "l";
-  else lengthBucket = "xl";
+  let end = i;
+  while (end < prompt.length && isFirstWordChar(prompt.charCodeAt(end))) end++;
 
-  const lang = classifyLanguage(message);
-  const shape = message.includes("?") ? "question" : "imperative";
-  const codeFence = message.includes("```");
-  const hasUrl =
-    message.includes("http://") || message.includes("https://");
+  if (end === i) return "";
+  return prompt.slice(i, Math.min(end, i + 32)).toLowerCase();
+}
 
-  const data =
-    `length:${lengthBucket} lang:${lang} shape:${shape} ` +
-    `codeFence:${codeFence} url:${hasUrl}`;
+/**
+ * Count `<identifier>.<ext>` references — algorithmic, no regex.
+ * The `ext` must be in FILE_EXTENSIONS and the char before the identifier
+ * must be a non-word char (so we don't count `xxxfoo.ts` mid-word matches).
+ */
+function countFileRefs(prompt: string): number {
+  let count = 0;
+  let i = 0;
+  while (i < prompt.length) {
+    const c = prompt.charCodeAt(i);
+    const prev = i > 0 ? prompt.charCodeAt(i - 1) : 0;
+    const atWordStart = i === 0 || !isFirstWordChar(prev);
 
-  return [{
-    type: "prompt_features",
-    category: "data",
-    data: safeString(data),
-    priority: 3,
-  }];
+    if (atWordStart && isFirstWordChar(c)) {
+      let j = i;
+      while (j < prompt.length && isFirstWordChar(prompt.charCodeAt(j))) j++;
+      if (j < prompt.length && prompt.charCodeAt(j) === 0x2E) {
+        const extStart = j + 1;
+        let k = extStart;
+        while (k < prompt.length && isExtChar(prompt.charCodeAt(k))) k++;
+        if (k > extStart) {
+          const ext = prompt.slice(extStart, k).toLowerCase();
+          const nextCode = k < prompt.length ? prompt.charCodeAt(k) : 0;
+          const boundary = k >= prompt.length || !isFirstWordChar(nextCode);
+          if (boundary && FILE_EXTENSIONS.has(ext)) {
+            count++;
+            i = k;
+            continue;
+          }
+        }
+      }
+      i = j;
+    } else {
+      i++;
+    }
+  }
+  return count;
+}
+
+/**
+ * Count path references prefixed by one of PATH_PREFIXES with at least one
+ * additional path segment character. Algorithmic, no regex.
+ */
+function countPathRefs(prompt: string): number {
+  let count = 0;
+  for (const prefix of PATH_PREFIXES) {
+    let start = 0;
+    while (true) {
+      const idx = prompt.indexOf(prefix, start);
+      if (idx < 0) break;
+      const prev = idx > 0 ? prompt.charCodeAt(idx - 1) : 0;
+      const atWordStart = idx === 0 || !isFirstWordChar(prev);
+      const afterIdx = idx + prefix.length;
+      const hasTail = afterIdx < prompt.length && isPathSegmentChar(prompt.charCodeAt(afterIdx));
+      if (atWordStart && hasTail) count++;
+      start = afterIdx;
+    }
+  }
+  return count;
+}
+
+function countQuestionMarks(prompt: string): number {
+  let count = 0;
+  for (let i = 0; i < prompt.length; i++) {
+    if (prompt.charCodeAt(i) === 0x3F) count++;
+  }
+  return count;
+}
+
+/**
+ * Privacy-aware prompt-feature extractor (Issue #9, F1 §2 canonical shape).
+ *
+ * Returns the 5-field PromptFeatures object — platform persists these as
+ * typed columns. The raw prompt text is NEVER copied into the returned
+ * object. Hook callers attach the returned features to the existing
+ * user_prompt event payload alongside the raw `data` field.
+ *
+ * Algorithmic implementation (no regex) — see helpers above.
+ */
+export function extractUserPromptFeatures(prompt: unknown): PromptFeatures {
+  if (typeof prompt !== "string" || prompt.length === 0) {
+    return {
+      prompt_length: 0,
+      prompt_first_word: "",
+      prompt_question_count: 0,
+      prompt_file_ref_count: 0,
+      prompt_path_ref_count: 0,
+    };
+  }
+
+  return {
+    prompt_length: prompt.length,
+    prompt_first_word: extractFirstWord(prompt),
+    prompt_question_count: countQuestionMarks(prompt),
+    prompt_file_ref_count: countFileRefs(prompt),
+    prompt_path_ref_count: countPathRefs(prompt),
+  };
 }
 
 /**

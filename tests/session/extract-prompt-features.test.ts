@@ -1,104 +1,123 @@
 /**
- * Issue #9 repro — extractUserPromptFeatures (privacy-aware feature stub).
+ * Issue #9 (updated PRD) — extractUserPromptFeatures per F1 spec.
  *
- * B5 prod sample data-quality flag #5: `user_prompt` raw text stored
- * unredacted. PRD requires aggregate FEATURES, not raw text, so analytics
- * can run without privacy compromise.
+ * Reference: context-mode-platform/docs/prds/2026-06-insight-data-flow/
+ *   09-oss-handoff-prd.md Issue #9 (interface PromptFeatures)
+ *   10-prompt-analytics-strategy.md §2 (signal list) + §5 (typed columns)
  *
- * Features captured:
- *  - length bucket (xs/s/m/l/xl)
- *  - language hint (latin / non-latin / mixed)
- *  - shape (question vs imperative)
- *  - code fence present (boolean)
- *  - URL present (boolean)
+ * Returns the 5-field F1-canonical shape (platform typed columns):
+ *   prompt_length: number
+ *   prompt_first_word: string (lowercased, max 32 chars)
+ *   prompt_question_count: number
+ *   prompt_file_ref_count: number (identifiers like foo.ts / bar.py)
+ *   prompt_path_ref_count: number (paths starting with src/tests/docs/scripts/hooks/packages)
  *
- * NEVER stores prompt text in event.data.
+ * NEVER stores raw prompt text on the returned object — features only.
  */
 
 import { describe, test, expect } from "vitest";
-import { extractUserEvents } from "../../src/session/extract.js";
+import { extractUserPromptFeatures } from "../../src/session/extract.js";
 
-function featuresOf(message: string) {
-  return extractUserEvents(message).filter((e) => e.type === "prompt_features");
-}
-
-describe("extractUserPromptFeatures — Issue #9 privacy feature stub", () => {
-  test("tracer: short English imperative emits one prompt_features event", () => {
-    const events = featuresOf("Refactor auth module.");
-    expect(events.length).toBe(1);
-    expect(events[0].data).toMatch(/length:/);
-    expect(events[0].data).toMatch(/lang:/);
+describe("extractUserPromptFeatures — F1 §2 spec", () => {
+  test("tracer: empty prompt → all zeros + empty first_word", () => {
+    const f = extractUserPromptFeatures("");
+    expect(f.prompt_length).toBe(0);
+    expect(f.prompt_first_word).toBe("");
+    expect(f.prompt_question_count).toBe(0);
+    expect(f.prompt_file_ref_count).toBe(0);
+    expect(f.prompt_path_ref_count).toBe(0);
   });
 
-  test("length buckets: xs / s / m / l / xl boundaries", () => {
-    expect(featuresOf("hi").length).toBe(1);
-    expect(featuresOf("hi")[0].data).toMatch(/length:xs/);
-
-    expect(featuresOf("Refactor the auth module please.")[0].data).toMatch(/length:s/);
-
-    const m = "x ".repeat(60).trim();
-    expect(featuresOf(m)[0].data).toMatch(/length:m/);
-
-    const l = "y ".repeat(300).trim();
-    expect(featuresOf(l)[0].data).toMatch(/length:l/);
-
-    const xl = "z ".repeat(700).trim();
-    expect(featuresOf(xl)[0].data).toMatch(/length:xl/);
+  test("English imperative: first_word + length + file ref", () => {
+    const f = extractUserPromptFeatures("Add login page with OAuth flow at src/auth.ts");
+    expect(f.prompt_first_word).toBe("add");
+    expect(f.prompt_length).toBeGreaterThan(20);
+    expect(f.prompt_file_ref_count).toBeGreaterThanOrEqual(1);
+    expect(f.prompt_path_ref_count).toBeGreaterThanOrEqual(1);
   });
 
-  test("Turkish text classified as non-latin OR mixed (per detector)", () => {
-    const events = featuresOf("Lütfen şu kodu yeniden düzenle.");
-    expect(events.length).toBe(1);
-    expect(events[0].data).toMatch(/lang:(non-latin|mixed|latin)/);
+  test("first_word lowercased", () => {
+    expect(extractUserPromptFeatures("REFACTOR auth").prompt_first_word).toBe("refactor");
+    expect(extractUserPromptFeatures("Why is this slow?").prompt_first_word).toBe("why");
   });
 
-  test("CJK text classified as non-latin", () => {
-    const events = featuresOf("コードをリファクタリングしてください。");
-    expect(events.length).toBe(1);
-    expect(events[0].data).toMatch(/lang:non-latin/);
+  test("first_word capped at 32 chars", () => {
+    const veryLongFirstWord = "a".repeat(80) + " rest of prompt";
+    const f = extractUserPromptFeatures(veryLongFirstWord);
+    expect(f.prompt_first_word.length).toBeLessThanOrEqual(32);
   });
 
-  test("question vs imperative shape detected", () => {
-    expect(featuresOf("How do I refactor this?")[0].data).toMatch(/shape:question/);
-    expect(featuresOf("Refactor this module.")[0].data).toMatch(/shape:imperative/);
+  test("question count: multi-question Turkish prompt", () => {
+    const f = extractUserPromptFeatures("Bu kod neden patladı? Nerede hata var? Ne yapmalıyız?");
+    expect(f.prompt_question_count).toBe(3);
   });
 
-  test("code fence detected", () => {
-    const withFence = "Run this:\n```bash\nls -la\n```";
-    expect(featuresOf(withFence)[0].data).toMatch(/codeFence:true/);
-    expect(featuresOf("No code here")[0].data).toMatch(/codeFence:false/);
+  test("question count: no questions → 0", () => {
+    expect(extractUserPromptFeatures("Refactor module.").prompt_question_count).toBe(0);
   });
 
-  test("URL presence detected", () => {
-    expect(featuresOf("See https://example.com for details")[0].data).toMatch(/url:true/);
-    expect(featuresOf("No links here")[0].data).toMatch(/url:false/);
-    expect(featuresOf("Check http://api.example.org/v1")[0].data).toMatch(/url:true/);
+  test("file ref counting: multiple file extensions", () => {
+    const f = extractUserPromptFeatures("Update foo.ts, bar.py, and baz.json, also some.md");
+    expect(f.prompt_file_ref_count).toBe(4);
   });
 
-  test("event NEVER contains the raw prompt text (privacy)", () => {
-    const secretish = "my-password-is-hunter2 and api_key=sk-secret123";
-    const events = featuresOf(secretish);
-    expect(events.length).toBe(1);
-    expect(events[0].data).not.toContain("hunter2");
-    expect(events[0].data).not.toContain("sk-secret123");
-    expect(events[0].data).not.toContain("password");
+  test("file ref counting: ignores plain words without extension", () => {
+    const f = extractUserPromptFeatures("Refactor the auth module please.");
+    expect(f.prompt_file_ref_count).toBe(0);
   });
 
-  test("empty message emits no prompt_features event", () => {
-    expect(featuresOf("").length).toBe(0);
+  test("path ref counting: src/ + tests/ + docs/", () => {
+    const f = extractUserPromptFeatures("Look in src/foo/bar.ts and tests/x.test.ts and docs/readme.md");
+    expect(f.prompt_path_ref_count).toBeGreaterThanOrEqual(3);
   });
 
-  test("event has category 'data' and is low priority (3)", () => {
-    const events = featuresOf("Refactor module X");
-    expect(events[0].category).toBe("data");
-    expect(events[0].priority).toBe(3);
+  test("path ref counting: ignores bare directories without trailing path chars", () => {
+    const f = extractUserPromptFeatures("Just talking about src and tests in general.");
+    expect(f.prompt_path_ref_count).toBe(0);
   });
 
-  test("/plan slash still triggers plan_enter AND prompt_features simultaneously", () => {
-    const events = extractUserEvents("/plan refactor auth");
-    const planEvents = events.filter((e) => e.type === "plan_enter");
-    const featEvents = events.filter((e) => e.type === "prompt_features");
-    expect(planEvents.length).toBe(1);
-    expect(featEvents.length).toBe(1);
+  test("emoji-only prompt → first_word is empty, length non-zero", () => {
+    const f = extractUserPromptFeatures("🎉 🚀 🐛");
+    expect(f.prompt_first_word).toBe("");
+    expect(f.prompt_length).toBeGreaterThan(0);
+  });
+
+  test("non-string input (defensive) → all zeros", () => {
+    // @ts-expect-error — defensive boundary
+    const f = extractUserPromptFeatures(null);
+    expect(f.prompt_length).toBe(0);
+    expect(f.prompt_first_word).toBe("");
+  });
+
+  test("prompt_length matches String.length (chars, not bytes)", () => {
+    expect(extractUserPromptFeatures("hello").prompt_length).toBe(5);
+    expect(extractUserPromptFeatures("şğı").prompt_length).toBe(3);
+  });
+
+  test("function returns plain object, NOT a SessionEvent", () => {
+    const f = extractUserPromptFeatures("anything");
+    expect(f).not.toHaveProperty("type");
+    expect(f).not.toHaveProperty("category");
+    expect(f).not.toHaveProperty("data");
+    expect(f).not.toHaveProperty("priority");
+  });
+
+  test("non-first-token content NEVER leaks into features (privacy)", () => {
+    // Per F1 §5 the first_word legitimately captures the first 32 chars of
+    // the first whitespace-separated token. Privacy is enforced at the
+    // SURFACE layer (UI/MCP), not at capture. But content past the first
+    // token must NEVER appear in the features object.
+    const sensitive = "refactor the api_key=sk-secret123 module";
+    const f = extractUserPromptFeatures(sensitive);
+    const serialized = JSON.stringify(f);
+    expect(f.prompt_first_word).toBe("refactor");
+    expect(serialized).not.toContain("sk-secret123");
+    expect(serialized).not.toContain("api_key");
+  });
+
+  test("first_word length cap enforced even on adversarial input", () => {
+    const longToken = "a".repeat(100);
+    const f = extractUserPromptFeatures(longToken);
+    expect(f.prompt_first_word.length).toBeLessThanOrEqual(32);
   });
 });
