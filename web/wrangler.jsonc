@@ -1,6 +1,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "context-mode-web",
+  "name": "context-mode",
+  "account_id": "14c2438b598b5ecf52438f6ce466c983",
   "main": "worker.js",
   "compatibility_date": "2025-01-01",
   "assets": {
