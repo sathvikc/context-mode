@@ -493,3 +493,28 @@ describe("Bash nudge size threshold (#817)", () => {
     }
   });
 });
+
+// ════════════════════════════════════════════════════════════════════════════
+// Issue #856 — session_continuity framing must NOT present a captured snapshot
+// as an inescapable standing order. The old wording ("remain active until the
+// user revokes them" + "Do not drop behavioral directives as context grows")
+// turned a one-off casual phrase, once frozen as a role, into a directive the
+// model was told never to drop → do-nothing loop. The framing is softened so
+// continuity is a soft hint, not an irreversible mandate.
+// ════════════════════════════════════════════════════════════════════════════
+
+describe("Issue #856: session_continuity framing is a soft hint, not a standing order", () => {
+  const BLOCK = createRoutingBlock(_t, { includeCommands: false });
+
+  it("does not assert directives remain active 'until the user revokes them'", () => {
+    expect(BLOCK).not.toContain("remain active until the user revokes them");
+  });
+
+  it("does not command the model to never drop behavioral directives", () => {
+    expect(BLOCK).not.toContain("Do not drop behavioral directives as context grows");
+  });
+
+  it("still mentions session continuity (the hint is softened, not removed)", () => {
+    expect(BLOCK).toContain("session_continuity");
+  });
+});

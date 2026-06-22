@@ -984,20 +984,19 @@ describe("Pi Extension", () => {
   // ═══════════════════════════════════════════════════════════
 
   describe("Slice 9: active_memory injection", () => {
-    it("injects <active_memory> via context hook even when compact_count is 0", async () => {
+    it("injects context every turn via context hook even when compact_count is 0", async () => {
       await registerPiExtension(api);
       await api._trigger("session_start", {
         sessionManager: { getSessionFile: () => `active-mem-1-${Date.now()}-${Math.random()}` },
       });
 
-      // Seed user prompt with role pattern (priority 3) so the extractor
-      // produces a priority>=3 event the active_memory builder can pick up.
+      // Seed user prompt with role pattern (priority 3).
       await api._trigger("before_agent_start", {
         prompt: "You are a senior staff engineer reviewing this codebase.",
         systemPrompt: "Base.",
       });
 
-      // Second call should now set _pendingContext with <active_memory> built from those events.
+      // Second call rebuilds context (always-on, not just post-compaction).
       await api._trigger("before_agent_start", {
         systemPrompt: "Base 2.",
       });
@@ -1008,14 +1007,12 @@ describe("Pi Extension", () => {
       expect(ctxResult?.messages).toBeDefined();
       expect(ctxResult.messages.length).toBe(1);
       expect(ctxResult.messages[0].role).toBe("user");
-      // Either the auto-injection helper (rules/decisions) OR the inline
-      // fallback (active_memory) should have produced injected content.
+      // The always-on injection path fires every turn — the routing anchor
+      // proves context reaches the model even with compact_count 0.
       const content = String(ctxResult.messages[0].content);
-      const hasActiveMemory =
-        content.includes("<active_memory>") ||
-        content.includes("<rules>") ||
-        content.includes("<behavioral_directive>");
-      expect(hasActiveMemory).toBe(true);
+      expect(content).toContain("context-mode active");
+      // Issue #856 — the role MUST NOT be pinned as a standing directive.
+      expect(content).not.toContain("<behavioral_directive>");
     });
 
     it("caps active_memory at ≤ 2000 characters (via context hook)", async () => {
@@ -1039,19 +1036,67 @@ describe("Pi Extension", () => {
 
       const ctxResult = await api._trigger("context", { messages: [] });
       const content = String(ctxResult?.messages?.[0]?.content ?? "");
-      // Slice out the injected memory block (auto-injection or fallback).
-      const memMatch =
-        content.match(/<active_memory>[\s\S]*?<\/active_memory>/) ??
-        content.match(/<behavioral_directive>[\s\S]*?<\/behavioral_directive>/) ??
-        content.match(/<rules>[\s\S]*?<\/rules>/);
-      if (memMatch) {
-        // 500 token cap × 4 chars/token = 2000 chars; allow small padding for
-        // XML wrappers from buildAutoInjection / fallback markers.
-        expect(memMatch[0].length).toBeLessThanOrEqual(2200);
-      } else {
-        // If no block exists, the test should surface the failure.
-        expect(memMatch).not.toBeNull();
-      }
+      // Issue #856 — flooding with role prompts must NOT accumulate any
+      // behavioral_directive, and the per-turn injection must stay bounded
+      // (it is now just the routing anchor; roles are filtered out entirely).
+      expect(content).not.toContain("<behavioral_directive>");
+      // Bounded: the anchor block is small and fixed — 20 × 500-char role
+      // prompts cannot blow the per-turn injection past the cap.
+      expect(content.length).toBeLessThanOrEqual(2200);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════
+  // Slice 9b (#856): role is NOT re-injected as a standing
+  // behavioral_directive every turn (do-nothing-loop fix)
+  // ═══════════════════════════════════════════════════════════
+
+  describe("Slice 9b (#856): role not re-injected as behavioral_directive", () => {
+    it("never emits <behavioral_directive> in the per-turn context injection, even with a stored role", async () => {
+      await registerPiExtension(api);
+      const sessionFile = `role-noreinject-${Date.now()}-${Math.random()}`;
+      await api._trigger("session_start", {
+        sessionManager: { getSessionFile: () => sessionFile },
+      });
+
+      // Drive a genuine persona role prompt — extracted into the DB as a
+      // priority-3 `role` event. Pre-fix this froze as <behavioral_directive>
+      // and was replayed every turn.
+      await api._trigger("before_agent_start", {
+        prompt: "You are a senior staff engineer reviewing this codebase.",
+        systemPrompt: "Base.",
+      });
+
+      // Subsequent turn rebuilds context.
+      await api._trigger("before_agent_start", { systemPrompt: "Base 2." });
+      const ctxResult = await api._trigger("context", { messages: [] });
+      const content = String(ctxResult?.messages?.[0]?.content ?? "");
+
+      // The stale role must NOT be pinned as a standing behavioral_directive.
+      expect(content).not.toContain("<behavioral_directive>");
+    });
+
+    it("is surgical: drops the role directive but keeps the rest of the injection (routing anchor)", async () => {
+      await registerPiExtension(api);
+      const sessionFile = `role-filter-surgical-${Date.now()}-${Math.random()}`;
+      await api._trigger("session_start", {
+        sessionManager: { getSessionFile: () => sessionFile },
+      });
+
+      await api._trigger("before_agent_start", {
+        prompt: "You are a senior staff engineer reviewing this codebase.",
+        systemPrompt: "Base.",
+      });
+      await api._trigger("before_agent_start", { systemPrompt: "Base 2." });
+      const ctxResult = await api._trigger("context", { messages: [] });
+      const content = String(ctxResult?.messages?.[0]?.content ?? "");
+
+      // Role filtered out…
+      expect(content).not.toContain("<behavioral_directive>");
+      // …but injection itself is NOT disabled — the always-on routing anchor
+      // still reaches the model every turn (filter is role-specific, not a
+      // blanket drop of the whole context injection).
+      expect(content).toContain("context-mode active");
     });
   });
 

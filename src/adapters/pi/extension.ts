@@ -645,11 +645,22 @@ export default function piExtension(pi: any): void {
       // Pi-3 + Pi-4: Always build active_memory (not just post-compact),
       // capped at 500 tokens via buildAutoInjection. Falls back to inline
       // budget loop if the helper is unavailable.
-      const activeEvents = db.getEvents(_sessionId, {
-        minPriority: 3,
-        limit: 50,
-      });
-      let behavioralDirective = "";
+      //
+      // Issue #856 — do NOT re-inject `role` as a standing behavioral_directive
+      // on every turn. A casual past phrase that classified as a role would
+      // otherwise be pinned and replayed each turn ("since you said 'that's
+      // fine for now', I'll leave it"), producing a do-nothing loop. Defense in
+      // depth: even if a stale `role` event exists (from an older build, or a
+      // genuine persona the user has since moved past), it must not become an
+      // inescapable per-turn standing order. Role events stay in the DB and
+      // remain queryable via ctx_search(source: "session-events"); intent,
+      // skills, decisions, and the resume snapshot are unaffected.
+      const activeEvents = db
+        .getEvents(_sessionId, {
+          minPriority: 3,
+          limit: 50,
+        })
+        .filter((e: any) => String(e.category ?? "") !== "role");
       if (activeEvents.length > 0) {
         const buildAuto = await getAutoInjection(pluginRoot);
         let memoryContext = "";
@@ -660,14 +671,6 @@ export default function piExtension(pi: any): void {
               data: String(e.data ?? ""),
             })),
           );
-          const bdMatch = memoryContext.match(/(<behavioral_directive>\n[^<]*\n<\/behavioral_directive>)/);
-          if (bdMatch) {
-            behavioralDirective = bdMatch[1];
-            memoryContext = memoryContext.replace(bdMatch[1], "");
-            if (memoryContext.match(/^<session_state[^>]*>\s*<\/session_state>\s*$/)) {
-              memoryContext = "";
-            }
-          }
         }
         // Fallback (or if helper produced empty output): inline 500-token cap.
         if (!memoryContext) {
@@ -691,8 +694,6 @@ export default function piExtension(pi: any): void {
         parts.push(resume.snapshot);
         db.markResumeConsumed(_sessionId);
       }
-
-      if (behavioralDirective) parts.push(behavioralDirective);
 
       // Store extra context (routing anchor, active_memory, resume, behavioralDirective)
       // for injection via the 'context' hook as a message, NOT as a systemPrompt

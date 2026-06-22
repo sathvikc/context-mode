@@ -57,8 +57,7 @@ ${toolSearchBootstrap ? `
     </artifact_policy>
   </output_constraints>
   <session_continuity>
-    Skills, roles, and decisions set during this session remain active until the user revokes them.
-    Do not drop behavioral directives as context grows.
+    Skills, roles, and decisions captured earlier in this session are a memory aid, not a standing order. Treat them as context that may help — the user's most recent message always takes precedence. If a captured directive conflicts with what the user now asks, follow the user; a past phrase does not bind you.
   </session_continuity>
 ${includeCommands ? `
   <ctx_commands>

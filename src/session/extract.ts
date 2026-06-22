@@ -1546,6 +1546,72 @@ const ROLE_MAX_CHARS = 120;
 const TWO_LEXICAL_TOKENS_PATTERN = /\p{L}+\s+\p{L}+/u;
 const CONTINUOUS_LETTER_RUN_PATTERN = /\p{L}{6,}/u;
 
+// Issue #856 — persona / standing-directive cue gate.
+//
+// The structural test below ("two lexical tokens OR a 6-codepoint letter run,
+// 8..120 chars, no '?', no clause separator") is intentionally coarse and
+// matches ANY short declarative sentence. That let casual conversational
+// acknowledgements ("that's fine for now", "go with the second option") freeze
+// as a priority-3 `role`, which the Pi adapter then re-injected as a standing
+// behavioral_directive every turn → do-nothing loop.
+//
+// A genuine role/behavioral prompt always LEADS with a persona declaration
+// ("You are X", "Tu es X", "あなたは…", "你是…") or a standing-directive verb
+// ("always respond…", "act as…"). Casual phrases never do, so we require that
+// cue as a NECESSARY condition. This preserves legitimate role persistence
+// (issue #535 multilingual corpus) while killing the casual-phrase loop.
+//
+// ALGORITHMIC ONLY — pure lowercase + prefix membership, no regex (project
+// hard rule). Multilingual openers are matched by `startsWith` on the
+// normalized first clause; leading conversational filler tokens are stripped
+// by array operations before the check.
+const ROLE_FILLER_TOKENS = new Set([
+  "ok", "okay", "sure", "yeah", "yep", "yup", "alright", "fine",
+  "well", "so", "hmm", "right", "please",
+]);
+
+// Second-person persona openers across the supported-language corpus
+// (issue #535 multilingual role test set) plus common English persona framings.
+const ROLE_PERSONA_PREFIXES = [
+  "you are", "you're", "your role", "you will be", "you act", "you will act",
+  "act as", "act like", "behave as", "behave like", "imagine you", "pretend you",
+  "assume the role", "take the role", "play the role", "respond as",
+  "tu es", "tu est", "vous etes", "vous êtes", // French
+  "sen ", "siz ", // Turkish (Sen kıdemli…)
+  "eres ", "tú eres", "usted es", // Spanish (Eres…)
+  "ты ", "вы ", // Russian (Ты опытный…)
+  "あなたは", "君は", "お前は", "あなたが", // Japanese (あなたは…)
+  "你是", "您是", // Chinese (你是…)
+  "तुम ", "आप ", "तू ", // Hindi (तुम…)
+  "أنت ", "انت ", "أنتَ ", // Arabic (أنت…)
+];
+
+// Standing-directive verb openers — imperative behavioral rules that should
+// persist ("always respond in TypeScript", "never use emojis").
+const ROLE_DIRECTIVE_PREFIXES = [
+  "always ", "never ", "respond ", "reply ", "answer ", "speak ",
+  "write ", "prefer ", "format ", "output ", "communicate ", "use only ",
+];
+
+function hasRoleCue(firstClause: string): boolean {
+  const lower = firstClause.toLowerCase().trim();
+  if (!lower) return false;
+  // Strip leading conversational filler tokens via array ops (no regex).
+  const tokens = lower.split(" ").filter((t) => t.length > 0);
+  while (tokens.length > 0 && ROLE_FILLER_TOKENS.has(tokens[0])) {
+    tokens.shift();
+  }
+  const normalized = tokens.join(" ");
+  if (!normalized) return false;
+  for (const prefix of ROLE_PERSONA_PREFIXES) {
+    if (normalized.startsWith(prefix)) return true;
+  }
+  for (const prefix of ROLE_DIRECTIVE_PREFIXES) {
+    if (normalized.startsWith(prefix)) return true;
+  }
+  return false;
+}
+
 function looksLikeRole(trimmed: string): boolean {
   // Role prompts are persona-prefix shaped: the FIRST SENTENCE declares the
   // role (e.g. "You are a senior backend engineer. <long context...>").
@@ -1560,6 +1626,9 @@ function looksLikeRole(trimmed: string): boolean {
   if (!ALPHABETIC_PATTERN.test(firstClause)) return false;
   const codepointLength = [...firstClause].length;
   if (codepointLength < ROLE_MIN_CHARS || codepointLength > ROLE_MAX_CHARS) return false;
+  // Issue #856 — require a persona / standing-directive cue so casual
+  // conversational acknowledgements do not freeze as a role directive.
+  if (!hasRoleCue(firstClause)) return false;
   return (
     TWO_LEXICAL_TOKENS_PATTERN.test(firstClause) ||
     CONTINUOUS_LETTER_RUN_PATTERN.test(firstClause)
